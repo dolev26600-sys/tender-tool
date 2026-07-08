@@ -1,0 +1,15 @@
+# סודות - לעולם לא להעלות ל-git
+.env
+.streamlit/secrets.toml
+
+# פלטים שנוצרים בהרצה - לא צריך לשמור בגרסה
+reports/
+__pycache__/
+*.pyc
+
+# סביבות פייתון מקומיות
+venv/
+.venv/
+
+# קבצי מערכת
+.DS_Store
