@@ -268,11 +268,17 @@ def verify_conditions(pdf_text: str, conditions: dict) -> dict:
     """
     מעבר בדיקה-חוזרת יחיד: קורא שוב את טקסט המכרז המלא מול רשימת התנאים
     הנוכחית, ומחזיר dict עם complete/missing_conditions/corrected_conditions/notes.
+
+    חיסכון בעלות: זו הפונקציה שנקראת עד DEFAULT_VERIFICATION_PASSES פעמים
+    ברצף על אותו pdf_text בדיוק (רק רשימת התנאים הנוכחית משתנה בין מעבר
+    למעבר). לכן טקסט המכרז ממוקם *לפני* נקודת ה-cache_control, ורשימת
+    התנאים המשתנה מגיעה *אחרי* - כך שממעבר הבדיקה השני והלאה, Claude
+    קורא את הטקסט הגדול מהמטמון (כ-10% מהמחיר) במקום במחיר מלא.
     """
     client = anthropic.Anthropic()
 
-    user_content = (
-        "## הטקסט המקורי המלא של המכרז:\n```\n" + pdf_text + "\n```\n\n"
+    pdf_block = "## הטקסט המקורי המלא של המכרז:\n```\n" + pdf_text + "\n```"
+    conditions_block = (
         "## תנאי הסף שכבר חולצו (לבדיקה חוזרת):\n```json\n"
         + json.dumps(conditions, ensure_ascii=False, indent=2)
         + "\n```"
@@ -282,9 +288,17 @@ def verify_conditions(pdf_text: str, conditions: dict) -> dict:
         model=MODEL,
         max_tokens=16000,
         thinking={"type": "adaptive"},
-        system=VERIFICATION_SYSTEM_PROMPT,
+        system=[{"type": "text", "text": VERIFICATION_SYSTEM_PROMPT, "cache_control": {"type": "ephemeral", "ttl": "1h"}}],
         output_config={"format": {"type": "json_schema", "schema": VERIFICATION_JSON_SCHEMA}},
-        messages=[{"role": "user", "content": user_content}],
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": pdf_block, "cache_control": {"type": "ephemeral"}},
+                    {"type": "text", "text": conditions_block},
+                ],
+            }
+        ],
     )
 
     text_block = next(b.text for b in response.content if b.type == "text")
