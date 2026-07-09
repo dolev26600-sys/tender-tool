@@ -100,14 +100,33 @@ export TENDER_TOOL_PASSWORD="בחר-סיסמה-משותפת"
    להיכנס לכתובת הזו מהדפדפן שלו. חיסרון: זה עובד רק כשהמחשב שלך דלוק
    ומחובר לאותה רשת.
 
-2. **אחסון אמיתי באינטרנט** (כתובת קבועה, נגישה מכל מקום): מעלים את
-   הקוד ל-GitHub ומחברים לשירות כמו Streamlit Community Cloud (חינמי
-   לפרויקטים קטנים) - מקבלים כתובת URL קבועה שאפשר לשלוח לכל עובד, בלי
-   תלות שהמחשב שלך דלוק. זה דורש הקמה חד-פעמית (חשבון GitHub + חשבון
-   Streamlit Cloud, והגדרת ANTHROPIC_API_KEY כ"secret" בשירות - לא בקוד).
+2. **אחסון אמיתי באינטרנט** (כתובת קבועה, נגישה מכל מקום, לא תלוי שהמחשב
+   שלך דלוק) - דרך **Streamlit Community Cloud** (חינמי). זה דורש הקמה
+   חד-פעמית של חשבונות שלך (GitHub + Streamlit Cloud):
 
-אם תרצה לעבור לאפשרות 2 (מומלץ לטווח ארוך), תגיד לי ונעבור על זה ביחד
-שלב-שלב.
+   **מה כבר מוכן בקוד** (בוצע): הפרויקט הוא כבר repo של git, עם `.gitignore`
+   שמוודא שה-`.env` (המפתח הסודי) **לא** יעלה ל-GitHub בטעות.
+
+   **מה שרק אתה יכול לעשות** (כי זה דורש את החשבונות שלך):
+
+   1. **התקן GitHub Desktop** (ממשק גרפי, בלי צורך בפקודות טרמינל
+      להעלאה): https://desktop.github.com - התקן והתחבר עם חשבון GitHub
+      (או צור חשבון חינמי אם אין לך, ישירות באפליקציה).
+   2. ב-GitHub Desktop: **File → Add Local Repository** → בחר את התיקייה
+      `~/Desktop/tender_tool` → **Publish repository** (מומלץ לסמן
+      **Keep this code private**).
+   3. כנס ל-https://share.streamlit.io והתחבר עם **אותו חשבון GitHub**.
+   4. **Create app** → **Deploy a public app from GitHub** → בחר את
+      ה-repository שפרסמת, Branch: `main`, Main file path: `app.py`.
+   5. לפני שלוחצים Deploy - פתח **Advanced settings → Secrets** והדבק:
+      ```
+      ANTHROPIC_API_KEY = "sk-ant-המפתח-שלך"
+      TENDER_TOOL_PASSWORD = "בחר-סיסמה-לעובדים"
+      ```
+      (זה המקום הבטוח לשים את המפתח - הוא לא נכנס לקוד ולא ל-GitHub.)
+   6. **Deploy**. אחרי דקה-שתיים תקבל כתובת קבועה בסגנון
+      `https://tender-tool-xxxx.streamlit.app` - זו הכתובת ששולחים לעובדים.
+      הגישה בפועל עדיין מוגנת בסיסמה (`TENDER_TOOL_PASSWORD`) שהגדרת.
 
 ## איך זה עובד
 
