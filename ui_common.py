@@ -37,27 +37,42 @@ def status_badge_html(status: str) -> str:
 
 
 def configure_page(title: str) -> None:
-    """קריאה ראשונה בכל עמוד - הגדרות הדף + CSS משותף."""
+    """קריאה ראשונה בכל עמוד - הגדרות הדף + CSS משותף.
+
+    הערה: כיוון RTL מוחל בזהירות - *לא* על [class*="css"] הגורף (שמתנגש
+    עם המנגנון הפנימי של Streamlit לפתיחה/סגירה של הסרגל הצדדי ושובר
+    אותו), אלא רק על אזורי תוכן וטקסט ספציפיים.
+    """
     st.set_page_config(
         page_title=f"{title} — {COMPANY_NAME}",
         page_icon="✅",
         layout="centered",
+        initial_sidebar_state="expanded",
     )
     st.markdown(
         """
         <style>
         @import url('https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700&display=swap');
 
-        html, body, [class*="css"] {
-            direction: rtl;
-            text-align: right;
+        html, body {
             font-family: 'Assistant', -apple-system, 'Segoe UI', sans-serif;
         }
-        .stTextInput input, .stTextArea textarea, .stNumberInput input, .stMarkdown {
+
+        /* RTL רק על תוכן - לא על מבנה הדף (סרגל צדדי, עמודות וכו') */
+        .main .block-container, .stMarkdown, .stText, p, h1, h2, h3, h4, h5, h6 {
+            direction: rtl;
+            text-align: right;
+        }
+        .stTextInput input, .stTextArea textarea, .stNumberInput input {
             direction: rtl; text-align: right;
         }
         [data-testid="stMetricLabel"] { direction: rtl; }
-        [data-testid="stSidebarNav"] { direction: rtl; text-align: right; }
+
+        /* טקסט התפריט הצדדי מיושר ימין, אבל בלי לגעת במבנה/רוחב שלו */
+        [data-testid="stSidebarNav"] span, [data-testid="stSidebarNav"] a {
+            direction: rtl;
+            text-align: right;
+        }
 
         #MainMenu, footer, header [data-testid="stToolbar"] { visibility: hidden; }
 
