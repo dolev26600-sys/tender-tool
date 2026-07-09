@@ -120,24 +120,32 @@ def evaluate_eligibility(profile: dict, tender: dict) -> dict:
     מריץ השוואה סמנטית גנרית בין פרופיל החברה לתנאי מכרז נתון, בעזרת Claude.
     מחזיר dict עם 'overall_summary' ו-'results' (רשימה מועשרת בפרטי כל תנאי
     מקובץ המכרז המקורי, לנוחות התצוגה בדו"ח).
+
+    חיסכון בעלות: פרופיל החברה נשלח בשלמותו בכל בדיקת מכרז, אבל הוא כמעט
+    אף פעם לא משתנה בין מכרז למכרז - לכן הוא ממוקם *לפני* נקודת ה-cache,
+    ותנאי המכרז הספציפי (שכן משתנה בכל פעם) מגיע *אחריה*. כך בדיקת מכרז
+    שנייה/שלישית באותו יום (עד שעה) קוראת את הפרופיל מהמטמון בעלות מופחתת.
     """
     client = anthropic.Anthropic()
 
-    user_content = (
-        "## פרופיל הארגון (JSON):\n```json\n"
-        + json.dumps(profile, ensure_ascii=False, indent=2)
-        + "\n```\n\n## תנאי הסף של המכרז (JSON):\n```json\n"
-        + json.dumps(tender, ensure_ascii=False, indent=2)
-        + "\n```"
-    )
+    profile_block = "## פרופיל הארגון (JSON):\n```json\n" + json.dumps(profile, ensure_ascii=False, indent=2) + "\n```"
+    tender_block = "## תנאי הסף של המכרז (JSON):\n```json\n" + json.dumps(tender, ensure_ascii=False, indent=2) + "\n```"
 
     response = client.messages.create(
         model=MODEL,
         max_tokens=16000,
         thinking={"type": "adaptive"},
-        system=EVALUATION_SYSTEM_PROMPT,
+        system=[{"type": "text", "text": EVALUATION_SYSTEM_PROMPT, "cache_control": {"type": "ephemeral", "ttl": "1h"}}],
         output_config={"format": {"type": "json_schema", "schema": EVAL_JSON_SCHEMA}},
-        messages=[{"role": "user", "content": user_content}],
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": profile_block, "cache_control": {"type": "ephemeral", "ttl": "1h"}},
+                    {"type": "text", "text": tender_block},
+                ],
+            }
+        ],
     )
 
     text_block = next(b.text for b in response.content if b.type == "text")
