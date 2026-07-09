@@ -58,23 +58,16 @@ def configure_page(title: str) -> None:
             font-family: 'Assistant', -apple-system, 'Segoe UI', sans-serif;
         }
 
-        /* RTL רק על תוכן - לא על מבנה הדף (סרגל צדדי, עמודות וכו') */
-        .main .block-container, .stMarkdown, .stText, p, h1, h2, h3, h4, h5, h6 {
+        /* RTL רק על טקסט עלים ספציפיים - לא נוגעים בשום מיכל/מבנה
+        (block-container, sidebar, header, toolbar) כדי לא לשבור את
+        מנגנון הפתיחה/סגירה של הסרגל הצדדי. */
+        p, li, label, h1, h2, h3, h4, h5, h6 {
             direction: rtl;
             text-align: right;
         }
         .stTextInput input, .stTextArea textarea, .stNumberInput input {
             direction: rtl; text-align: right;
         }
-        [data-testid="stMetricLabel"] { direction: rtl; }
-
-        /* טקסט התפריט הצדדי מיושר ימין, אבל בלי לגעת במבנה/רוחב שלו */
-        [data-testid="stSidebarNav"] span, [data-testid="stSidebarNav"] a {
-            direction: rtl;
-            text-align: right;
-        }
-
-        #MainMenu, footer, header [data-testid="stToolbar"] { visibility: hidden; }
 
         .app-header { text-align: center; padding: 1.25rem 0 1rem 0; border-bottom: 1px solid #e5e7eb; margin-bottom: 1.5rem; }
         .app-header h1 { font-size: 1.5rem; margin-bottom: 0.25rem; color: #0f172a; }
