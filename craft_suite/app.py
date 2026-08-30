@@ -13,7 +13,10 @@
 """
 from __future__ import annotations
 
+from dotenv import load_dotenv
 import streamlit as st
+
+load_dotenv()  # קורא ANTHROPIC_API_KEY מקובץ .env באותה תיקייה, אם קיים
 
 import storage
 from quote_agent import draft_quote
