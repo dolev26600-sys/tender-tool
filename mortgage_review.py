@@ -49,8 +49,9 @@ SEVERITY_LABELS = {
 
 MIN_FIXED_SHARE = 1 / 3          # שיעור מזערי מקובל של מסלולים בריבית קבועה
 MAX_TERM_MONTHS = 30 * 12        # אורך תקופה מרבי מקובל
-MAX_PTI = 0.40                   # יחס החזר להכנסה - סף מקובל אצל הבנקים
-MAX_STRESSED_PTI = 0.50          # יחס החזר להכנסה בתרחיש קיצון - סף אזהרה
+MAX_PTI = 0.40                   # סף מקובל אצל הבנקים בפועל
+REGULATORY_MAX_PTI = 0.50        # תקרת בנק ישראל
+MAX_STRESSED_PTI = 0.50          # יחס החזר בתרחיש קיצון - סף אזהרה
 
 MAX_LTV_BY_BUYER = {
     "first_home": 0.75,   # דירה יחידה
@@ -84,6 +85,7 @@ def run_rule_checks(
     monthly_income: Optional[float] = None,
     buyer_type: Optional[str] = None,
     horizon_years: Optional[float] = None,
+    other_monthly_obligations: Optional[float] = None,
 ) -> list[dict]:
     """
     בדיקות דטרמיניסטיות על התמהיל המוצע. כל פרמטר אופציונלי - בדיקה שאין
@@ -165,16 +167,54 @@ def run_rule_checks(
     # --- יחס החזר להכנסה, גם בתרחיש קיצון ---
     if monthly_income and monthly_income > 0:
         initial_payment = stats.get("initial_total_monthly_payment", 0)
-        pti = initial_payment / monthly_income
-        if pti > MAX_PTI:
+
+        # מ-1 ביולי 2026 בנק ישראל מחייב לחשב את יחס ההחזר על **כל**
+        # התחייבויות הלווה יחד - משכנתא, הלוואות צרכניות, רכב וליסינג,
+        # חובות כרטיסי אשראי, הלוואות חוץ-בנקאיות ומזונות. עד אז היה
+        # אפשר לבחון כל הלוואה בנפרד. בדיקה שמסתכלת רק על תשלום המשכנתא
+        # תיתן היום תשובה אופטימית מדי, ותפתיע בהגשה לבנק.
+        # None = היועץ לא הזין; 0 = הוא הזין במפורש שאין. ההבחנה חשובה:
+        # רק במקרה הראשון יש מה להזכיר לו.
+        obligations_unknown = other_monthly_obligations is None
+        other = float(other_monthly_obligations or 0.0)
+        total_payment = initial_payment + other
+        pti = total_payment / monthly_income
+
+        obligations_note = (
+            f" (מזה {other:,.0f} ₪ התחייבויות קיימות)" if other > 0 else ""
+        )
+
+        if pti > REGULATORY_MAX_PTI:
             findings.append(_finding(
                 SEVERITY_CRITICAL,
-                "יחס ההחזר להכנסה גבוה מהסף המקובל",
-                f"ההחזר ההתחלתי הוא {pti:.0%} מההכנסה החודשית, מעל הסף המקובל של {MAX_PTI:.0%}.",
-                "להאריך תקופה, להקטין סכום, או לבחון הכנסות נוספות שניתן להציג לבנק.",
+                "יחס ההחזר חורג מתקרת בנק ישראל",
+                f"סך ההחזרים החודשיים הוא {total_payment:,.0f} ₪{obligations_note}, "
+                f"שהם {pti:.0%} מההכנסה - מעל תקרת בנק ישראל ({REGULATORY_MAX_PTI:.0%}). "
+                "התיק צפוי להידחות.",
+                "להקטין סכום, להאריך תקופה, או לסלק התחייבויות קיימות לפני ההגשה.",
+            ))
+        elif pti > MAX_PTI:
+            findings.append(_finding(
+                SEVERITY_CRITICAL,
+                "יחס ההחזר גבוה מהסף שהבנקים מאשרים בפועל",
+                f"סך ההחזרים החודשיים הוא {total_payment:,.0f} ₪{obligations_note}, "
+                f"שהם {pti:.0%} מההכנסה. התקרה הרגולטורית היא {REGULATORY_MAX_PTI:.0%}, "
+                f"אבל בנקים מאשרים בפועל סביב {MAX_PTI:.0%}.",
+                "להאריך תקופה, להקטין סכום, לסלק התחייבויות קיימות, "
+                "או לבחון הכנסות נוספות שניתן להציג לבנק.",
             ))
 
-        stressed_payment = stress.get("stressed_total_monthly_payment", 0)
+        if obligations_unknown:
+            findings.append(_finding(
+                SEVERITY_NOTE,
+                "לא הוזנו התחייבויות קיימות",
+                "מיולי 2026 הבנק מחשב את יחס ההחזר על כל ההלוואות של הלווה יחד - "
+                "רכב, אשראי, הלוואות חוץ-בנקאיות ומזונות - ולא רק על המשכנתא. "
+                "אם ללקוח יש התחייבויות שלא הוזנו, היחס בפועל גבוה מהמוצג כאן.",
+                "לוודא מול הלקוח שאין החזרים נוספים, ולהזין אותם אם יש.",
+            ))
+
+        stressed_payment = stress.get("stressed_total_monthly_payment", 0) + other
         stressed_pti = stressed_payment / monthly_income
         if stressed_pti > MAX_STRESSED_PTI:
             findings.append(_finding(
@@ -325,6 +365,7 @@ def review_mix(
     monthly_income: Optional[float] = None,
     buyer_type: Optional[str] = None,
     horizon_years: Optional[float] = None,
+    other_monthly_obligations: Optional[float] = None,
     client_context: str = "",
     rate_increase_pct: float = 2.0,
     cpi_annual_pct: float = 3.0,
@@ -344,6 +385,7 @@ def review_mix(
         monthly_income=monthly_income,
         buyer_type=buyer_type,
         horizon_years=horizon_years,
+        other_monthly_obligations=other_monthly_obligations,
     )
 
     review = ai_review(tracks, stats, stress, rule_findings, client_context=client_context)

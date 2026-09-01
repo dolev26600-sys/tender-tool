@@ -715,12 +715,51 @@ def _checks_for(tracks, **kwargs):
 
 
 def test_sound_mix_produces_no_findings():
-    """הבדיקה החשובה ביותר: אין אזעקות שווא על תמהיל תקין."""
+    """
+    הבדיקה החשובה ביותר: אין אזעקות שווא על תמהיל תקין, כשכל הנתונים
+    הושלמו - כולל אישור מפורש שאין התחייבויות קיימות.
+    """
     findings = _checks_for(
         _sound_mix(), property_value=1_600_000, monthly_income=25_000,
-        buyer_type="first_home", horizon_years=25,
+        buyer_type="first_home", horizon_years=25, other_monthly_obligations=0,
     )
     assert findings == []
+
+
+def test_missing_obligations_is_flagged_but_explicit_zero_is_not():
+    """
+    מיולי 2026 הבנק מחשב יחס החזר על כל ההלוואות יחד. יועץ ששכח להזין
+    התחייבויות יקבל תשובה אופטימית מדי, ולכן חוסר הנתון מסומן - אבל
+    "אין התחייבויות" שהוזן במפורש אינו הערה.
+    """
+    common = dict(property_value=1_600_000, monthly_income=25_000,
+                  buyer_type="first_home", horizon_years=25)
+    not_entered = _checks_for(_sound_mix(), **common)
+    entered_zero = _checks_for(_sound_mix(), other_monthly_obligations=0, **common)
+
+    assert any("התחייבויות קיימות" in f["title"] for f in not_entered)
+    assert entered_zero == []
+
+
+def test_obligations_push_pti_over_the_line():
+    """
+    אותו תמהיל ואותה הכנסה: בלי התחייבויות עובר, ועם החזר רכב נוסף חורג.
+    זה בדיוק מה שהשתנה ביולי 2026.
+    """
+    clean = _checks_for(_sound_mix(), monthly_income=16_000, other_monthly_obligations=0)
+    with_car = _checks_for(_sound_mix(), monthly_income=16_000, other_monthly_obligations=1_800)
+
+    assert not any("יחס ההחזר" in f["title"] for f in clean)
+    assert any("יחס ההחזר" in f["title"] for f in with_car)
+
+
+def test_pti_over_regulatory_ceiling_is_distinguished_from_bank_practice():
+    """שני ספים שונים: מה שבנקים מאשרים בפועל, ומה שבנק ישראל מתיר בכלל."""
+    practice = _checks_for(_sound_mix(), monthly_income=16_000, other_monthly_obligations=1_800)
+    ceiling = _checks_for(_sound_mix(), monthly_income=16_000, other_monthly_obligations=5_000)
+
+    assert any("שהבנקים מאשרים בפועל" in f["title"] for f in practice)
+    assert any("תקרת בנק ישראל" in f["title"] for f in ceiling)
 
 
 def test_checks_skip_when_data_missing():
@@ -754,8 +793,8 @@ def test_investment_buyer_has_stricter_ltv():
 
 
 def test_high_pti_is_flagged():
-    findings = _checks_for(_sound_mix(), monthly_income=10_000)
-    assert any("החזר להכנסה" in f["title"] for f in findings)
+    findings = _checks_for(_sound_mix(), monthly_income=10_000, other_monthly_obligations=0)
+    assert any("יחס ההחזר" in f["title"] for f in findings)
 
 
 def test_early_repayment_exposure_flagged_against_short_horizon():

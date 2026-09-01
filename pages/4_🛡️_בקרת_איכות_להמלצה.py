@@ -144,6 +144,15 @@ col1, col2 = st.columns(2)
 with col1:
     property_value = st.number_input("שווי הנכס (₪)", min_value=0, step=50000, value=0)
     monthly_income = st.number_input("הכנסה חודשית פנויה (₪)", min_value=0, step=1000, value=0)
+    other_obligations = st.number_input(
+        "החזרים חודשיים קיימים (₪)",
+        min_value=0, step=250, value=0,
+        help=(
+            "רכב, ליסינג, הלוואות צרכניות, כרטיסי אשראי, הלוואות חוץ-בנקאיות ומזונות. "
+            "מ-1 ביולי 2026 הבנק מחשב את יחס ההחזר על כל אלה יחד עם המשכנתא, "
+            "ולא על כל הלוואה בנפרד."
+        ),
+    )
 with col2:
     buyer_type_key = st.selectbox(
         "סוג הרוכש",
@@ -196,6 +205,7 @@ if review_clicked:
                 monthly_income=monthly_income or None,
                 buyer_type=buyer_type_key or None,
                 horizon_years=horizon_years or None,
+                other_monthly_obligations=other_obligations or None,
                 client_context=client_context,
                 rate_increase_pct=rate_increase_pct,
                 cpi_annual_pct=cpi_annual_pct,
