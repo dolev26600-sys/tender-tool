@@ -382,6 +382,120 @@ def test_track_level_breakeven_consistency():
             assert approx(t.monthly_saving * t.breakeven_months, t.exit_fee, tol=1.0)
 
 
+# ------------------------------------------------------ אופטימיזציית תמהיל
+
+from mortgage_optimizer import Constraints, optimize  # noqa: E402
+
+_OPT_RATES = {
+    "fixed_unlinked": 4.6,
+    "fixed_linked_cpi": 3.4,
+    "variable_prime": 5.4,
+}
+_OPT_MARKET = {
+    "fixed_unlinked": 4.3,
+    "fixed_linked_cpi": 3.2,
+    "variable_prime": 5.2,
+}
+
+
+def _opt(**kwargs):
+    c = Constraints(loan_amount=1_200_000, term_months=300, **kwargs.pop("constraints", {}))
+    return optimize(_OPT_RATES, c, step_pct=10, **kwargs)
+
+
+def test_linked_track_is_not_treated_as_cheap():
+    """
+    רגרסיה על באג אמיתי: ריבית נקובה של מסלול צמוד נמוכה יותר, אבל הקרן
+    גדלה עם המדד. בלי התיקון, האופטימיזציה מתכנסת תמיד לצמוד ומדווחת
+    עליו כזול ביותר - טעות שנראית סבירה לחלוטין על המסך.
+    """
+    res = _opt(expected_cpi_pct=2.0)
+    cheapest = res["best"]["cheapest_total"]
+    linked_amount = cheapest.allocation.get("fixed_linked_cpi", 0)
+    assert linked_amount < 1_200_000, "הזול ביותר לא אמור להיות 100% צמוד"
+
+
+def test_nominal_payment_is_lower_than_effective_for_linked():
+    """ההחזר שהלקוח משלם בחודש הראשון נמוך מהעלות האפקטיבית, במסלול צמוד."""
+    res = _opt(expected_cpi_pct=3.0)
+    lowest = res["best"]["lowest_monthly"]
+    if lowest.cpi_share > 0:
+        assert lowest.base_monthly_nominal < lowest.base_monthly
+
+
+def test_zero_inflation_makes_linked_and_unlinked_comparable():
+    """כשהאינפלציה הצפויה 0, ריבית נקובה של צמוד כן ברת-השוואה ישירה."""
+    res = _opt(expected_cpi_pct=0.0)
+    cheapest = res["best"]["cheapest_total"]
+    assert cheapest.allocation.get("fixed_linked_cpi", 0) > 0
+
+
+def test_min_fixed_share_constraint_is_respected():
+    res = _opt()
+    for cand in res["best"].values():
+        assert cand.fixed_share >= 1 / 3 - 1e-6
+
+
+def test_max_monthly_payment_filters_candidates():
+    """התקרה נבדקת מול ההחזר בפועל, לא מול העלות האפקטיבית."""
+    res = _opt(constraints={"max_monthly_payment": 6500})
+    for cand in res["best"].values():
+        assert cand.base_monthly_nominal <= 6500 + 1e-6
+
+
+def test_impossible_constraints_fail_with_clear_message():
+    try:
+        _opt(constraints={"max_monthly_payment": 500})
+    except ValueError as e:
+        assert "תקרת ההחזר" in str(e)
+    else:
+        raise AssertionError("היה צריך להיכשל על אילוץ בלתי אפשרי")
+
+
+def test_most_stable_has_no_more_exposure_than_cheapest():
+    res = _opt()
+    assert res["best"]["most_stable"].exposure <= res["best"]["cheapest_total"].exposure + 1e-6
+
+
+def test_frontier_is_monotonic():
+    """חזית יעילות: ככל שהעלות עולה, החשיפה יורדת. אחרת זו לא חזית."""
+    res = _opt()
+    frontier = res["frontier"]
+    assert frontier
+    for a, b in zip(frontier, frontier[1:]):
+        assert b.total_cost >= a.total_cost - 1e-6
+        assert b.exposure <= a.exposure + 1e-6
+
+
+def test_frontier_collapses_when_one_track_dominates():
+    """
+    כשמסלול אחד גם הזול ביותר וגם היציב ביותר, אין דילמה - והחזית מצטמצמת
+    לנקודה אחת. זו תשובה נכונה, לא תקלה: המנוע לא אמור להמציא פשרה
+    כשאין מה לפשר עליו.
+    """
+    res = _opt()  # קבועה לא צמודה 4.6% מנצחת גם צמודה (3.4+2) וגם פריים 5.4
+    assert len(res["frontier"]) == 1
+    assert res["frontier"][0].exposure == 0
+
+
+def test_frontier_expands_when_a_real_tradeoff_exists():
+    """כשמסלול משתנה באמת זול יותר, נוצרת דילמה אמיתית והחזית נפרשת."""
+    cheap_prime = {**_OPT_RATES, "variable_prime": 3.9}
+    c = Constraints(loan_amount=1_200_000, term_months=300)
+    res = optimize(cheap_prime, c, step_pct=10, expected_cpi_pct=2.0)
+    assert len(res["frontier"]) >= 2
+    # הקצה הזול חשוף יותר מהקצה היציב - זו בדיוק המשמעות של חזית
+    assert res["frontier"][0].exposure > res["frontier"][-1].exposure
+
+
+def test_cheapest_exit_beats_others_on_exit_cost():
+    res = _opt(early_exit_year=5, market_rates=_OPT_MARKET)
+    best_exit = res["best"]["cheapest_exit"]
+    for key, cand in res["best"].items():
+        if key != "cheapest_exit" and cand.exit_fee is not None:
+            assert best_exit.exit_fee <= cand.exit_fee + 1e-6
+
+
 # ------------------------------------------------ בדיקות הכלל של בקרת האיכות
 
 def _sound_mix():
