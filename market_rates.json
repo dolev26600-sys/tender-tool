@@ -1,0 +1,31 @@
+{
+  "as_of": "2026-09-01",
+  "verified": false,
+  "source": "ערכי התחלה מחיפוש אינטרנט - לא אומתו מול פרסום בנק ישראל. יש להחליף.",
+  "how_to_update": "בנק ישראל מפרסם מדי חודש את הריבית הממוצעת על הלוואות לדיור לפי מסלול ולפי תקופה. יש להעתיק משם את הערכים המתאימים לתקופה שנותרה למסלול, לעדכן as_of, ולסמן verified=true.",
+  "boi_rate_pct": null,
+  "average_rates_by_track_type": {
+    "fixed_unlinked": 4.74,
+    "fixed_linked_cpi": 3.45,
+    "variable_unlinked": 4.74,
+    "variable_linked_cpi": 3.45
+  },
+  "notes_on_track_types": {
+    "variable_prime": "פריים פטור מעמלת היוון ולכן אינו זקוק לריבית ממוצעת.",
+    "period_matters": "בנק ישראל מפרסם ריבית ממוצעת לפי טווח התקופה שנותרה. הערך הנכון לשימוש הוא זה שמתאים לתקופה שנותרה למסלול, לא ממוצע כללי."
+  },
+  "bank_variable_conventions": [
+    {
+      "bank": "הפועלים",
+      "anchor": "לאימות מול הסכם ההלוואה",
+      "typical_reset_period_months": null,
+      "note": "לפי היועץ - עוגן אג\"ח בלבד במסלול המשתנה. יש לאמת מול המסמך של ההלוואה הספציפית."
+    },
+    {"bank": "לאומי", "anchor": "לאימות מול הסכם ההלוואה", "typical_reset_period_months": null, "note": ""},
+    {"bank": "מזרחי טפחות", "anchor": "לאימות מול הסכם ההלוואה", "typical_reset_period_months": null, "note": ""},
+    {"bank": "דיסקונט", "anchor": "לאימות מול הסכם ההלוואה", "typical_reset_period_months": null, "note": ""},
+    {"bank": "הבינלאומי", "anchor": "לאימות מול הסכם ההלוואה", "typical_reset_period_months": null, "note": ""},
+    {"bank": "ירושלים", "anchor": "לאימות מול הסכם ההלוואה", "typical_reset_period_months": null, "note": ""}
+  ],
+  "why_anchors_are_blank": "העוגן ותדירות העדכון הם תנאי של ההלוואה הספציפית, לא קבוע של הבנק. באותו בנק יש ותקים שונים עם עוגנים שונים. הכלי לא ינחש - הנתון נקרא מדוח היתרות או מהסכם ההלוואה של הלקוח."
+}

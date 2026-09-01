@@ -808,6 +808,315 @@ def test_no_early_repayment_flag_for_long_horizon():
     assert not any("פירעון מוקדם" in f["title"] for f in findings)
 
 
+# ------------------------------- דוח יתרות: מספרים מדווחים מול משוחזרים
+
+def _reported_track(**over):
+    t = {
+        "name": "קבועה לא צמודה",
+        "track_type": "fixed_unlinked",
+        "original_amount": 600000,
+        "annual_interest_rate_pct": 5.0,
+        "original_period_months": 300,
+        "months_elapsed": 60,
+    }
+    t.update(over)
+    return t
+
+
+def test_resolve_track_state_reconstructs_when_nothing_reported():
+    """בלי שדות מדוח יתרות ההתנהגות זהה לשחזור - תאימות לאחור מלאה."""
+    from mortgage_refi import resolve_track_state, remaining_balance
+    t = _reported_track()
+    st = resolve_track_state(t)
+    assert st.balance_source == "reconstructed"
+    assert st.term_source == "reconstructed"
+    expected = remaining_balance(600000, 5.0, 300, 60)
+    assert abs(st.balance - expected) < 1e-6
+    assert st.remaining_months == 240
+
+
+def test_reconstructed_payment_equals_original_payment():
+    """
+    זהות שפיצר: תשלום על היתרה לתקופה שנותרה שווה לתשלום המקורי.
+    בלי זה המעבר לחישוב מהיתרה היה משנה בשקט תוצאות קיימות.
+    """
+    from mortgage_refi import resolve_track_state
+    st = resolve_track_state(_reported_track())
+    original_payment = monthly_payment_shpitzer(600000, 5.0, 300)
+    assert abs(st.monthly_payment - original_payment) < 1e-6
+
+
+def test_reported_balance_overrides_reconstruction():
+    from mortgage_refi import resolve_track_state
+    st = resolve_track_state(_reported_track(current_balance=555000, remaining_months=222))
+    assert st.balance_source == "reported"
+    assert st.balance == 555000
+    assert st.remaining_months == 222
+    assert st.term_source == "reported"
+
+
+def test_reported_payment_is_used_verbatim():
+    from mortgage_refi import resolve_track_state
+    st = resolve_track_state(_reported_track(current_balance=555000, current_monthly_payment=3777.5))
+    assert st.payment_source == "reported"
+    assert st.monthly_payment == 3777.5
+
+
+def test_reported_balance_drives_the_exit_fee():
+    """יתרה מדווחת גבוהה יותר חייבת לייצר עמלת היוון גבוהה יותר."""
+    from mortgage_refi import compute_exit_cost
+    market = {"fixed_unlinked": 3.0}
+    low = compute_exit_cost([_reported_track(current_balance=400000, remaining_months=240)],
+                            market_rates_by_track_type=market)
+    high = compute_exit_cost([_reported_track(current_balance=520000, remaining_months=240)],
+                             market_rates_by_track_type=market)
+    assert high.total_capitalization > low.total_capitalization
+    assert abs(high.total_balance - 520000) < 1e-6
+
+
+def test_reconstruction_understates_a_linked_balance():
+    """
+    הנקודה שבגללה דוח יתרות עדיף על שחזור: במסלול צמוד מדד השחזור
+    מפחית קרן נומינלית ומתעלם מההצמדה שנצברה, ולכן נותן יתרה נמוכה מדי.
+    """
+    from mortgage_refi import resolve_track_state, reconcile_tracks
+    linked = _reported_track(track_type="fixed_linked_cpi", annual_interest_rate_pct=3.0)
+    reconstructed = resolve_track_state(linked).balance
+    # הצמדה מצטברת מעלה את היתרה בפועל מעל השחזור הנומינלי
+    with_index = dict(linked, current_balance=reconstructed * 1.09)
+    st = resolve_track_state(with_index)
+    assert st.balance > reconstructed
+    assert st.balance_gap > 0
+
+    rec = reconcile_tracks([with_index])
+    assert len(rec) == 1
+    assert rec[0].severity == "expected"
+    assert "הצמדה" in rec[0].explanation
+
+
+def test_reconciliation_flags_unexplained_gap_on_unlinked_track():
+    from mortgage_refi import resolve_track_state, reconcile_tracks
+    base = resolve_track_state(_reported_track()).balance
+    rec = reconcile_tracks([_reported_track(current_balance=base * 1.12)])
+    assert rec[0].severity == "check"
+
+    # ופער קטן לא אמור להקים רעש
+    quiet = reconcile_tracks([_reported_track(current_balance=base * 1.005)])
+    assert quiet[0].severity == "ok"
+
+
+def test_reconciliation_notes_a_partial_repayment():
+    from mortgage_refi import resolve_track_state, reconcile_tracks
+    base = resolve_track_state(_reported_track()).balance
+    rec = reconcile_tracks([_reported_track(current_balance=base * 0.80)])
+    assert rec[0].severity == "check"
+    assert rec[0].gap < 0
+    assert "פירעון חלקי" in rec[0].explanation
+
+
+# ------------------------------------- תחנות עדכון ריבית ופטור מעמלת היוון
+
+def test_frequently_resetting_variable_track_is_exempt():
+    """מסלול משתנה שמתעדכן שנתית או תכוף יותר פטור מעמלת היוון לגמרי."""
+    from mortgage_refi import capitalization_fee, capitalization_exemption
+    fee = capitalization_fee(500000, 5.5, 3.0, 240,
+                             track_type="variable_unlinked", rate_reset_period_months=12)
+    assert fee == 0.0
+    exempt, reason = capitalization_exemption("variable_unlinked", 12, None)
+    assert exempt and "שנה או פחות" in reason
+
+
+def test_multi_year_variable_track_is_not_exempt_between_stations():
+    from mortgage_refi import capitalization_fee
+    fee = capitalization_fee(500000, 5.5, 3.0, 240,
+                             track_type="variable_unlinked", rate_reset_period_months=60,
+                             months_to_next_reset=30)
+    assert fee > 0
+
+
+def test_repaying_at_the_station_removes_the_capitalization_fee():
+    """
+    אותו מסלול בדיוק, אותו יום - ההבדל היחיד הוא פירעון בתחנה.
+    זו ההמלצה שמחזירה ללקוח את מלוא העמלה.
+    """
+    from mortgage_refi import capitalization_fee
+    between = capitalization_fee(500000, 5.5, 3.0, 240,
+                                 track_type="variable_unlinked",
+                                 rate_reset_period_months=60, months_to_next_reset=4)
+    at_station = capitalization_fee(500000, 5.5, 3.0, 240,
+                                    track_type="variable_unlinked",
+                                    rate_reset_period_months=60, months_to_next_reset=0)
+    assert between > 0
+    assert at_station == 0.0
+
+
+def test_exit_cost_reports_what_waiting_for_the_station_saves():
+    from mortgage_refi import compute_exit_cost
+    tracks = [{
+        "name": "משתנה כל 5 שנים",
+        "track_type": "variable_unlinked",
+        "current_balance": 500000,
+        "remaining_months": 240,
+        "annual_interest_rate_pct": 5.5,
+        "rate_reset_period_months": 60,
+        "months_to_next_reset": 4,
+    }]
+    ec = compute_exit_cost(tracks, market_rates_by_track_type={"variable_unlinked": 3.0})
+    t = ec.tracks[0]
+    assert t.capitalization > 0
+    # בתחנה העמלה מתאפסת, ולכן ההמתנה שווה בדיוק את מלוא העמלה של היום
+    assert t.saving_from_waiting_for_reset == t.capitalization
+    assert ec.saving_from_waiting_for_resets > 0
+    upcoming = ec.tracks_with_upcoming_reset
+    assert len(upcoming) == 1 and upcoming[0].months_to_next_reset == 4
+
+
+def test_prime_stays_exempt_regardless_of_reset_fields():
+    from mortgage_refi import capitalization_fee
+    assert capitalization_fee(500000, 6.0, 3.0, 240, track_type="variable_prime",
+                              rate_reset_period_months=60, months_to_next_reset=30) == 0.0
+
+
+def test_upcoming_resets_are_sorted_by_nearest_station():
+    """'חכה חודשיים' שווה יותר מ'חכה שלוש שנים' - הסדר הוא לפי קרבה."""
+    from mortgage_refi import compute_exit_cost
+    def tr(name, to_reset):
+        return {"name": name, "track_type": "variable_unlinked", "current_balance": 400000,
+                "remaining_months": 200, "annual_interest_rate_pct": 5.5,
+                "rate_reset_period_months": 60, "months_to_next_reset": to_reset}
+    ec = compute_exit_cost([tr("רחוק", 33), tr("קרוב", 3)],
+                           market_rates_by_track_type={"variable_unlinked": 3.0})
+    assert [t.name for t in ec.tracks_with_upcoming_reset] == ["קרוב", "רחוק"]
+
+
+# ----------------------------------------- עיבוד דוח יתרות (דטרמיניסטי)
+
+def _report(**over):
+    r = {
+        "bank_name": "הפועלים",
+        "report_date": "01/09/2026",
+        "document_type": "balance_report",
+        "total_balance": 900000,
+        "tracks": [
+            {"name": "קבועה לא צמודה", "track_type": "fixed_unlinked",
+             "current_balance": 500000, "remaining_months": 180,
+             "annual_interest_rate_pct": 5.2, "rate_reset_period_months": None,
+             "next_reset_date": None, "rate_anchor": None},
+            {"name": "משתנה כל 5", "track_type": "variable_unlinked",
+             "current_balance": 400000, "remaining_months": 180,
+             "annual_interest_rate_pct": 5.6, "rate_reset_period_months": 60,
+             "next_reset_date": "01/12/2026", "rate_anchor": "עוגן אג\"ח ממשלתי"},
+        ],
+    }
+    r.update(over)
+    return r
+
+
+def test_report_date_parsing_handles_israeli_formats():
+    from datetime import date
+    from mortgage_balance_extraction import parse_report_date
+    assert parse_report_date("15/03/2027") == date(2027, 3, 15)
+    assert parse_report_date("15.03.2027") == date(2027, 3, 15)
+    assert parse_report_date("2027-03-15") == date(2027, 3, 15)
+    assert parse_report_date(None) is None
+    assert parse_report_date("לא צוין") is None
+
+
+def test_past_reset_date_rolls_forward_by_the_period():
+    from datetime import date
+    from mortgage_balance_extraction import months_to_next_reset
+    # תחנה שעברה לפני שנתיים וחצי, עדכון כל 5 שנים -> התחנה הבאה בעוד 30 חודשים
+    assert months_to_next_reset("01/03/2024", 60, today=date(2026, 9, 1)) == 30
+
+
+def test_past_reset_date_without_period_is_unknown_not_zero():
+    """
+    להחזיר 0 היה מצהיר "אתה בתחנה" ולאפס עמלת היוון אמיתית על סמך ניחוש.
+    הכיוון הבטוח הוא לא לדעת.
+    """
+    from datetime import date
+    from mortgage_balance_extraction import months_to_next_reset
+    assert months_to_next_reset("01/03/2024", None, today=date(2026, 9, 1)) is None
+
+
+def test_to_refi_tracks_feeds_the_engine():
+    from datetime import date
+    from mortgage_balance_extraction import to_refi_tracks
+    tracks = to_refi_tracks(_report(), today=date(2026, 9, 1))
+    assert len(tracks) == 2
+    variable = tracks[1]
+    assert variable["current_balance"] == 400000
+    assert variable["months_to_next_reset"] == 3
+    # שדות ריקים לא הופכים לאפסים שנראים כמו נתונים
+    assert "next_reset_date" not in tracks[0]
+
+
+def test_validate_flags_missing_rate_as_blocker():
+    from mortgage_balance_extraction import validate_report, blockers
+    r = _report()
+    r["tracks"][0]["annual_interest_rate_pct"] = None
+    issues = validate_report(r)
+    assert any(i["field"].endswith("annual_interest_rate_pct") for i in blockers(issues))
+
+
+def test_validate_flags_missing_station_date_as_money_warning():
+    from mortgage_balance_extraction import validate_report
+    r = _report()
+    r["tracks"][1]["next_reset_date"] = None
+    issues = validate_report(r)
+    warn = [i for i in issues if i["field"].endswith("next_reset_date")]
+    assert warn and warn[0]["severity"] == "warn"
+
+
+def test_validate_catches_a_missing_track_via_total_mismatch():
+    from mortgage_balance_extraction import validate_report
+    issues = validate_report(_report(total_balance=1_200_000))
+    assert any(i["field"] == "total_balance" for i in issues)
+    assert not validate_report(_report())  or all(
+        i["field"] != "total_balance" for i in validate_report(_report()))
+
+
+def test_validate_recognises_an_offer_fed_to_the_wrong_tool():
+    from mortgage_balance_extraction import validate_report
+    issues = validate_report(_report(document_type="offer"))
+    assert any(i["field"] == "document_type" for i in issues)
+
+
+def test_end_to_end_station_changes_the_exit_cost():
+    """
+    מקצה לקצה: אותו דוח יתרות בדיוק, ההבדל היחיד הוא אם ידוע שיש תחנה
+    קרובה. זה הפער בין המלצה נכונה למיותרת.
+    """
+    from datetime import date
+    from mortgage_balance_extraction import to_refi_tracks
+    from mortgage_refi import compute_exit_cost
+    market = {"fixed_unlinked": 4.0, "variable_unlinked": 4.0}
+
+    with_station = compute_exit_cost(
+        to_refi_tracks(_report(), today=date(2026, 9, 1)),
+        market_rates_by_track_type=market)
+
+    blind = _report()
+    blind["tracks"][1]["next_reset_date"] = None
+    without_station = compute_exit_cost(
+        to_refi_tracks(blind, today=date(2026, 9, 1)),
+        market_rates_by_track_type=market)
+
+    # העמלה *היום* זהה בשני המקרים, וזה נכון: מי שפורע עכשיו משלם אותה
+    # בין אם ידע על התחנה ובין אם לא.
+    assert abs(without_station.total_capitalization - with_station.total_capitalization) < 1e-9
+    assert with_station.total_capitalization > 0
+
+    # ההבדל הוא בעצה: בלי תאריך התחנה אי אפשר להמליץ להמתין, ועם התאריך
+    # ההמתנה של 3 חודשים שווה בדיוק את מלוא עמלת ההיוון.
+    assert without_station.saving_from_waiting_for_resets == 0
+    saving = with_station.saving_from_waiting_for_resets
+    assert saving > 0
+    upcoming = with_station.tracks_with_upcoming_reset
+    assert len(upcoming) == 1 and upcoming[0].months_to_next_reset == 3
+    assert abs(saving - upcoming[0].capitalization) < 1e-9
+
+
 # ------------------------------------------------------------------ runner
 
 if __name__ == "__main__":

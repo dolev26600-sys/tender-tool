@@ -39,6 +39,43 @@ CPI_LINKED_TRACK_TYPES = {"fixed_linked_cpi", "variable_linked_cpi"}
 # לפי השוק, ולכן לבנק אין הפסד ריבית עתידי לפצות עליו.
 NO_CAPITALIZATION_TRACK_TYPES = {"variable_prime"}
 
+# מסלול משתנה שהריבית בו מתעדכנת בתדירות של שנה או יותר פטור מעמלת היוון
+# לגמרי. מעבר לזה - כל מועד עדכון ריבית הוא "תחנת יציאה" שבה אפשר לפרוע
+# בלי עמלת היוון.
+FREQUENT_RESET_MAX_MONTHS = 12
+
+
+def capitalization_exemption(
+    track_type: str,
+    rate_reset_period_months: int | None = None,
+    months_to_next_reset: int | None = None,
+) -> tuple[bool, str | None]:
+    """
+    האם המסלול פטור מעמלת היוון, ולמה.
+
+    זה הרכיב שמשתנה בין בנק לבנק ובין מסלול למסלול, והוא גם הכי שווה כסף.
+    המבנה של המסלול המשתנה - כל כמה זמן הריבית מתעדכנת ומתי התחנה הבאה -
+    קובע אם יש עמלת היוון בכלל. שני פטורים נפרדים:
+
+    1. **תדירות עדכון של שנה או פחות** - אין עמלת היוון אף פעם. זה המצב
+       בפריים, ובכל מסלול משתנה שמתעדכן שנתית או תכוף יותר.
+    2. **פירעון בתחנה** - במסלול שמתעדכן כל כמה שנים, מועד עדכון הריבית
+       עצמו הוא תחנת יציאה ללא עמלת היוון. לקוח שנמצא חודשיים לפני תחנה
+       יכול לחסוך את מלוא העמלה בהמתנה, וזו לרוב ההמלצה הכי משתלמת שאפשר
+       לתת לו.
+    """
+    if track_type in NO_CAPITALIZATION_TRACK_TYPES:
+        return True, "מסלול פריים - הריבית מתעדכנת לפי השוק, ואין לבנק הפסד ריבית לפצות עליו."
+    period = rate_reset_period_months or 0
+    if 0 < period <= FREQUENT_RESET_MAX_MONTHS:
+        return True, (
+            f"הריבית מתעדכנת כל {period} חודשים - תדירות של שנה או פחות, "
+            "ולכן המסלול פטור מעמלת היוון."
+        )
+    if months_to_next_reset is not None and months_to_next_reset <= 0:
+        return True, "פירעון במועד עדכון הריבית (תחנת יציאה) - פטור מעמלת היוון."
+    return False, None
+
 DEFAULT_OPERATIONAL_FEE = 60.0
 NO_NOTICE_FEE_RATE = 0.001  # 0.1% - נמנעת בהודעה מוקדמת בכתב
 
@@ -87,6 +124,8 @@ def capitalization_fee(
     *,
     seniority_discount_pct: float = 0.0,
     track_type: str = "other",
+    rate_reset_period_months: int | None = None,
+    months_to_next_reset: int | None = None,
 ) -> float:
     """
     עמלת היוון (הפרשי ריבית).
@@ -98,7 +137,10 @@ def capitalization_fee(
     """
     if balance <= 0 or remaining_months <= 0:
         return 0.0
-    if track_type in NO_CAPITALIZATION_TRACK_TYPES:
+    exempt, _reason = capitalization_exemption(
+        track_type, rate_reset_period_months, months_to_next_reset
+    )
+    if exempt:
         return 0.0
     if market_rate_pct >= loan_rate_pct:
         return 0.0
@@ -134,10 +176,28 @@ class TrackExitCost:
     capitalization: float
     index_compensation: float
     no_notice: float
+    state: "TrackState | None" = None
+    rate_reset_period_months: int | None = None
+    months_to_next_reset: int | None = None
+    capitalization_exempt_reason: str | None = None
 
     @property
     def total(self) -> float:
         return self.capitalization + self.index_compensation + self.no_notice
+
+    @property
+    def saving_from_waiting_for_reset(self) -> float:
+        """
+        כמה חוסכת המתנה לתחנת עדכון הריבית הבאה.
+
+        בתחנה עמלת ההיוון מתאפסת, ולכן החיסכון הוא בדיוק העמלה שהייתה
+        נגבית היום. רלוונטי רק כשידוע שיש תחנה עתידית: כשהמסלול כבר
+        בתחנה (0) העמלה ממילא אפס, וכשלא ידוע מתי התחנה אי אפשר להבטיח
+        חיסכון.
+        """
+        if self.months_to_next_reset is None or self.months_to_next_reset <= 0:
+            return 0.0
+        return self.capitalization
 
 
 @dataclass
@@ -171,6 +231,27 @@ class ExitCostBreakdown:
             + self.operational_fee
         )
 
+    @property
+    def tracks_with_upcoming_reset(self) -> list["TrackExitCost"]:
+        """
+        מסלולים שבהם המתנה לתחנת עדכון הריבית מבטלת עמלת היוון אמיתית.
+
+        ממוין לפי הקרוב ביותר: ההמלצה "חכה חודשיים" שווה הרבה יותר
+        מ"חכה שלוש שנים", גם אם הסכום שנחסך גדול יותר בשנייה.
+        """
+        upcoming = [
+            t for t in self.tracks
+            if t.months_to_next_reset is not None
+            and t.months_to_next_reset > 0
+            and t.saving_from_waiting_for_reset > 0
+        ]
+        return sorted(upcoming, key=lambda t: t.months_to_next_reset or 0)
+
+    @property
+    def saving_from_waiting_for_resets(self) -> float:
+        """סך העמלה שאפשר להימנע ממנה בהמתנה לתחנות."""
+        return sum(t.saving_from_waiting_for_reset for t in self.tracks_with_upcoming_reset)
+
 
 def compute_exit_cost(
     tracks: list[dict],
@@ -194,21 +275,19 @@ def compute_exit_cost(
 
     for t in tracks:
         track_type = t.get("track_type", "other")
-        total_months = int(t.get("original_period_months", 0) or 0)
-        elapsed = int(t.get("months_elapsed", 0) or 0)
-        remaining_months = max(0, total_months - elapsed)
-
-        balance = remaining_balance(
-            float(t.get("original_amount", 0) or 0),
-            float(t.get("annual_interest_rate_pct", 0) or 0),
-            total_months,
-            elapsed,
-        )
+        state = resolve_track_state(t)
+        remaining_months = state.remaining_months
+        balance = state.balance
         if balance <= 0:
             continue
 
-        loan_rate = float(t.get("annual_interest_rate_pct", 0) or 0)
+        loan_rate = _as_float(t.get("annual_interest_rate_pct"))
         market_rate = float(market_rates_by_track_type.get(track_type, loan_rate))
+
+        reset_period = t.get("rate_reset_period_months")
+        months_to_reset = t.get("months_to_next_reset")
+        reset_period = int(reset_period) if reset_period else None
+        months_to_reset = int(months_to_reset) if months_to_reset is not None else None
 
         cap = capitalization_fee(
             balance,
@@ -217,7 +296,10 @@ def compute_exit_cost(
             remaining_months,
             seniority_discount_pct=seniority_discount_pct,
             track_type=track_type,
+            rate_reset_period_months=reset_period,
+            months_to_next_reset=months_to_reset,
         )
+        exempt, exempt_reason = capitalization_exemption(track_type, reset_period, months_to_reset)
         idx = index_compensation_fee(balance, avg_cpi_change_12m_pct, track_type=track_type)
         no_notice = 0.0 if give_advance_notice else balance * NO_NOTICE_FEE_RATE
 
@@ -231,21 +313,195 @@ def compute_exit_cost(
             capitalization=cap,
             index_compensation=idx,
             no_notice=no_notice,
+            state=state,
+            rate_reset_period_months=reset_period,
+            months_to_next_reset=months_to_reset,
+            capitalization_exempt_reason=exempt_reason if exempt else None,
         ))
 
     return breakdown
 
 
+@dataclass
+class TrackState:
+    """
+    המצב הנוכחי של מסלול: יתרה, תקופה שנותרה והחזר חודשי - יחד עם המקור
+    של כל אחד מהם.
+
+    יש שני מקורות אפשריים. **דוח יתרות מהבנק** מדווח את המספרים האלה
+    ישירות, ואז הם הקובעים. בהיעדרו משחזרים אותם מהסכום והתקופה
+    המקוריים לפי לוח שפיצר.
+
+    השחזור אינו שקול לדיווח, ובמסלול צמוד מדד הוא אפילו לא נכון
+    עקרונית: הוא מפחית קרן נומינלית ומתעלם מהצמדה שנצברה, ולכן יראה
+    יתרה **נמוכה מהאמיתית**. הוא גם לא מכיר פירעונות חלקיים, גרירה,
+    דחיית תשלומים או פיגורים. לכן כשיש דיווח - הוא מנצח, ואת הפער בין
+    השניים שווה להציג ליועץ ולא להסתיר.
+    """
+    balance: float
+    remaining_months: int
+    monthly_payment: float
+    balance_source: str          # "reported" / "reconstructed"
+    term_source: str
+    payment_source: str
+    reconstructed_balance: float | None = None
+
+    @property
+    def balance_gap(self) -> float | None:
+        """כמה הדיווח גבוה מהשחזור. None כשאין שחזור להשוות אליו."""
+        if self.reconstructed_balance is None:
+            return None
+        return self.balance - self.reconstructed_balance
+
+    @property
+    def balance_gap_pct(self) -> float | None:
+        gap = self.balance_gap
+        if gap is None or not self.reconstructed_balance:
+            return None
+        return gap / self.reconstructed_balance * 100
+
+
+def _as_float(value) -> float:
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _as_int(value) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def resolve_track_state(t: dict) -> TrackState:
+    """
+    קובע יתרה/תקופה/החזר למסלול, בעדיפות למספרים שדווחו בדוח יתרות.
+
+    המפתחות המדווחים (current_balance, remaining_months,
+    current_monthly_payment) הם אופציונליים - בלעדיהם ההתנהגות זהה לחלוטין
+    לשחזור מהסכום המקורי, כך שקוד קיים לא מושפע.
+    """
+    rate = _as_float(t.get("annual_interest_rate_pct"))
+    total_months = _as_int(t.get("original_period_months"))
+    elapsed = _as_int(t.get("months_elapsed"))
+
+    reconstructed = None
+    if total_months > 0 and _as_float(t.get("original_amount")) > 0:
+        reconstructed = remaining_balance(
+            _as_float(t.get("original_amount")), rate, total_months, elapsed
+        )
+
+    reported_balance = _as_float(t.get("current_balance"))
+    if reported_balance > 0:
+        balance, balance_source = reported_balance, "reported"
+    else:
+        balance, balance_source = (reconstructed or 0.0), "reconstructed"
+
+    reported_term = _as_int(t.get("remaining_months"))
+    if reported_term > 0:
+        months, term_source = reported_term, "reported"
+    else:
+        months, term_source = max(0, total_months - elapsed), "reconstructed"
+
+    reported_payment = _as_float(t.get("current_monthly_payment"))
+    if reported_payment > 0:
+        payment, payment_source = reported_payment, "reported"
+    else:
+        # שקול מתמטית ל-pmt על הסכום והתקופה המקוריים בלוח שפיצר,
+        # ולכן אינו משנה תוצאה עבור מסלול משוחזר.
+        payment, payment_source = monthly_payment_shpitzer(balance, rate, months), "reconstructed"
+
+    return TrackState(
+        balance=balance,
+        remaining_months=months,
+        monthly_payment=payment,
+        balance_source=balance_source,
+        term_source=term_source,
+        payment_source=payment_source,
+        reconstructed_balance=reconstructed if balance_source == "reported" else None,
+    )
+
+
+BALANCE_GAP_TOLERANCE_PCT = 2.0
+
+
+@dataclass
+class TrackReconciliation:
+    """השוואה בין היתרה שהבנק דיווח לבין היתרה שמשוחזרת מלוח שפיצר."""
+    name: str
+    track_type: str
+    reported_balance: float
+    reconstructed_balance: float
+    gap: float
+    gap_pct: float
+    severity: str      # "ok" / "expected" / "check"
+    explanation: str
+
+
+def reconcile_tracks(tracks: list[dict]) -> list[TrackReconciliation]:
+    """
+    מוצא מסלולים שבהם היתרה המדווחת רחוקה מזו שנגזרת מהסכום המקורי.
+
+    זו בדיקת שפיות על הקלט, לא חישוב פיננסי: פער גדול מצביע או על טעות
+    בקריאת הדוח, או על אירוע אמיתי בתיק שהיועץ צריך לדעת עליו. שני
+    הכיוונים מעניינים - יתרה גבוהה מהצפוי במסלול לא צמוד היא סימן
+    לפיגור או לדחיית תשלומים, ויתרה נמוכה מהצפוי היא בדרך כלל פירעון
+    חלקי שכבר בוצע.
+    """
+    out = []
+    for t in tracks:
+        state = resolve_track_state(t)
+        if state.balance_source != "reported" or state.reconstructed_balance is None:
+            continue
+        if state.reconstructed_balance <= 0:
+            continue
+
+        gap = state.balance_gap or 0.0
+        gap_pct = state.balance_gap_pct or 0.0
+        track_type = t.get("track_type", "other")
+        linked = track_type in CPI_LINKED_TRACK_TYPES
+
+        if abs(gap_pct) <= BALANCE_GAP_TOLERANCE_PCT:
+            severity = "ok"
+            explanation = "היתרה המדווחת תואמת את השחזור מלוח הסילוקין."
+        elif gap > 0 and linked:
+            severity = "expected"
+            explanation = (
+                "היתרה המדווחת גבוהה מהשחזור, וזה הצפוי במסלול צמוד מדד: "
+                "השחזור מפחית קרן נומינלית ולא מכיר את ההצמדה שנצברה. "
+                "היתרה מהדוח היא הנכונה."
+            )
+        elif gap > 0:
+            severity = "check"
+            explanation = (
+                "היתרה המדווחת גבוהה מהשחזור במסלול לא צמוד. כדאי לברר "
+                "פיגורים, דחיית תשלומים, גרירה או מיחזור קודם - או טעות בקריאת הדוח."
+            )
+        else:
+            severity = "check"
+            explanation = (
+                "היתרה המדווחת נמוכה מהשחזור. לרוב זה פירעון חלקי שכבר בוצע, "
+                "אבל שווה לוודא שהסכום והתקופה המקוריים נקראו נכון."
+            )
+
+        out.append(TrackReconciliation(
+            name=t.get("name", "") or track_type,
+            track_type=track_type,
+            reported_balance=state.balance,
+            reconstructed_balance=state.reconstructed_balance,
+            gap=gap,
+            gap_pct=gap_pct,
+            severity=severity,
+            explanation=explanation,
+        ))
+    return out
+
+
 def current_monthly_payment(tracks: list[dict]) -> float:
     """ההחזר החודשי הנוכחי של המשכנתא הקיימת (סכום התשלומים בכל המסלולים)."""
-    total = 0.0
-    for t in tracks:
-        total += monthly_payment_shpitzer(
-            float(t.get("original_amount", 0) or 0),
-            float(t.get("annual_interest_rate_pct", 0) or 0),
-            int(t.get("original_period_months", 0) or 0),
-        )
-    return total
+    return sum(resolve_track_state(t).monthly_payment for t in tracks)
 
 
 @dataclass
