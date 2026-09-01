@@ -488,6 +488,64 @@ def test_exclude_policy_never_falls_back_to_linked():
         raise AssertionError("היה צריך להיכשל ולא ליפול חזרה לצמוד")
 
 
+def test_shorter_term_costs_less_but_pays_more_monthly():
+    """
+    התמורה המרכזית במשכנתא, ולכן חייבת להיות מובטחת: תקופה קצרה יותר
+    מייקרת את ההחזר החודשי ומוזילה משמעותית את העלות הכוללת.
+    """
+    from mortgage_optimizer import optimize_across_terms
+
+    res = optimize_across_terms(
+        {"fixed_unlinked": 4.6, "variable_prime": 5.4},
+        1_200_000, term_years_options=[20, 30], step_pct=10,
+    )
+    by_term = {r.term_months // 12: r for r in res["per_term"] if r.feasible}
+    short, long = by_term[20].best["cheapest_total"], by_term[30].best["cheapest_total"]
+
+    assert short.base_monthly_nominal > long.base_monthly_nominal
+    assert short.total_cost < long.total_cost
+
+
+def test_payment_cap_determines_shortest_feasible_term():
+    """
+    "מה התקופה הקצרה ביותר שהלקוח עומד בה" - תקרה נמוכה יותר דוחפת את
+    התקופה המינימלית כלפי מעלה. זו התשובה המעשית שהיועץ צריך.
+    """
+    from mortgage_optimizer import optimize_across_terms
+
+    rates = {"fixed_unlinked": 4.6, "variable_prime": 5.4}
+    generous = optimize_across_terms(rates, 1_200_000, max_monthly_payment=9000, step_pct=10)
+    tight = optimize_across_terms(rates, 1_200_000, max_monthly_payment=7000, step_pct=10)
+
+    assert tight["shortest_feasible_term_months"] > generous["shortest_feasible_term_months"]
+
+
+def test_infeasible_terms_are_reported_not_hidden():
+    """תקופות שלא עומדות באילוץ מדווחות כלא-ישימות, לא נעלמות בשקט."""
+    from mortgage_optimizer import optimize_across_terms
+
+    res = optimize_across_terms(
+        {"fixed_unlinked": 4.6, "variable_prime": 5.4},
+        1_200_000, max_monthly_payment=7000, step_pct=10,
+    )
+    assert res["n_terms_checked"] > res["n_terms_feasible"]
+    assert any(not r.feasible and r.reason for r in res["per_term"])
+
+
+def test_all_terms_infeasible_raises_clearly():
+    from mortgage_optimizer import optimize_across_terms
+
+    try:
+        optimize_across_terms(
+            {"fixed_unlinked": 4.6, "variable_prime": 5.4},
+            1_200_000, max_monthly_payment=800, step_pct=10,
+        )
+    except ValueError as e:
+        assert "אף תקופה" in str(e)
+    else:
+        raise AssertionError("היה צריך להיכשל כשאף תקופה אינה ישימה")
+
+
 def test_most_stable_has_no_more_exposure_than_cheapest():
     res = _opt()
     assert res["best"]["most_stable"].exposure <= res["best"]["cheapest_total"].exposure + 1e-6

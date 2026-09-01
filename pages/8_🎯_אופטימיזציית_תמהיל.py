@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from mortgage_optimizer import TRACK_LABELS, Constraints, describe, optimize
+from mortgage_optimizer import TRACK_LABELS, describe, optimize_across_terms
 from ui_common import check_password, configure_page, render_footer, render_header
 
 # ברירות מחדל למסלולים. צמודי מדד מכובים כברירת מחדל בהתאם למדיניות
@@ -75,7 +75,15 @@ col1, col2 = st.columns(2)
 with col1:
     loan_amount = st.number_input("סכום ההלוואה (₪)", min_value=50_000, max_value=20_000_000,
                                   value=1_200_000, step=50_000)
-    term_years = st.slider("תקופה (שנים)", min_value=4, max_value=30, value=25)
+    term_range = st.slider(
+        "טווח תקופות לבדיקה (שנים)",
+        min_value=5, max_value=30, value=(15, 30),
+        help=(
+            "התקופה היא חלק מהאופטימיזציה, לא קלט קבוע. המנוע יבדוק כל תקופה "
+            "בטווח ויראה לך את התמורה - קיצור תקופה הוא בדרך כלל החיסכון הגדול "
+            "ביותר במשכנתא, גדול בהרבה מהפרש קטן בריבית."
+        ),
+    )
 with col2:
     max_monthly = st.number_input(
         "תקרת החזר חודשי (₪) — 0 = ללא תקרה",
@@ -148,15 +156,13 @@ if not rates:
 
 if run:
     try:
-        with st.spinner("סורק חלוקות..."):
-            result = optimize(
+        with st.spinner("סורק חלוקות על פני כל התקופות..."):
+            result = optimize_across_terms(
                 rates,
-                Constraints(
-                    loan_amount=float(loan_amount),
-                    term_months=term_years * 12,
-                    min_fixed_share=min_fixed_pct / 100,
-                    max_monthly_payment=float(max_monthly) if max_monthly > 0 else None,
-                ),
+                float(loan_amount),
+                term_years_options=range(term_range[0], term_range[1] + 1),
+                min_fixed_share=min_fixed_pct / 100,
+                max_monthly_payment=float(max_monthly) if max_monthly > 0 else None,
                 step_pct=step_pct,
                 stress_rate_pct=stress_rate,
                 stress_cpi_pct=stress_cpi,
@@ -167,6 +173,7 @@ if run:
             )
         st.session_state["opt_result"] = result
         st.session_state["opt_rates"] = rates
+        st.session_state["opt_exit_year"] = exit_year
     except ValueError as e:
         st.error(str(e))
         st.session_state.pop("opt_result", None)
@@ -176,17 +183,71 @@ if run:
 if "opt_result" in st.session_state:
     result = st.session_state["opt_result"]
     used_rates = st.session_state["opt_rates"]
+    shown_exit_year = st.session_state.get("opt_exit_year", 0)
+    feasible = [r for r in result["per_term"] if r.feasible]
 
     st.divider()
-    st.caption(f"נבדקו {result['n_candidates_evaluated']:,} חלוקות שעומדות באילוצים.")
 
-    if result.get("linked_required"):
-        st.warning(result["linked_required_note"], icon="⚠️")
+    # --- הכותרת: התקופה הקצרה ביותר שהלקוח עומד בה ---
+    shortest_years = result["shortest_feasible_term_years"]
+    longest = max(feasible, key=lambda r: r.term_months)
+    shortest = min(feasible, key=lambda r: r.term_months)
+    saving = longest.best["cheapest_total"].total_cost - shortest.best["cheapest_total"].total_cost
+    extra_monthly = (
+        shortest.best["cheapest_total"].base_monthly_nominal
+        - longest.best["cheapest_total"].base_monthly_nominal
+    )
 
-    for key, cand in result["best"].items():
+    st.subheader("התקופה")
+    if len(feasible) > 1 and saving > 0:
+        st.success(
+            f"**התקופה הקצרה ביותר שעומדת באילוצים: {shortest_years:g} שנים.** "
+            f"לעומת {longest.term_years:g} שנים היא מייקרת את ההחזר ב-{extra_monthly:,.0f} ₪ בחודש — "
+            f"וחוסכת **{saving:,.0f} ₪** לאורך התקופה.",
+            icon="⏱️",
+        )
+    else:
+        st.info(f"התקופה הקצרה ביותר שעומדת באילוצים: {shortest_years:g} שנים.", icon="⏱️")
+
+    if result["n_terms_feasible"] < result["n_terms_checked"]:
+        skipped = result["n_terms_checked"] - result["n_terms_feasible"]
+        st.caption(f"{skipped} תקופות קצרות יותר נבדקו ואינן עומדות בתקרת ההחזר.")
+
+    st.dataframe(
+        [
+            {
+                "תקופה": f"{r.term_years:g} שנים",
+                "החזר חודשי": round(r.best["cheapest_total"].base_monthly_nominal),
+                "עלות כוללת": round(r.best["cheapest_total"].total_cost),
+                "מול הארוכה ביותר": round(
+                    r.best["cheapest_total"].total_cost
+                    - longest.best["cheapest_total"].total_cost
+                ),
+                "הרכב": describe(r.best["cheapest_total"], used_rates),
+            }
+            for r in feasible
+        ],
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    # --- האופטימום לכל מטרה, על פני כל התקופות ---
+    st.subheader("האופטימום לכל מטרה")
+    st.caption("כל שורה היא התמהיל **והתקופה** הטובים ביותר עבור אותה מטרה.")
+
+    if any(r.linked_required for r in feasible):
+        st.warning(
+            "בחלק מהתקופות לא נמצאה חלוקה שעומדת באילוצים בלי מסלול צמוד מדד — "
+            "כלומר שם הלקוח אינו עומד בתקרה עם מסלולים לא צמודים בלבד.",
+            icon="⚠️",
+        )
+
+    for key, entry in result["best_overall"].items():
         label, sub = OBJECTIVE_LABELS.get(key, (key, ""))
+        cand = entry["candidate"]
+        years = entry["term_months"] / 12
         with st.container(border=True):
-            st.markdown(f"**{label}**")
+            st.markdown(f"**{label}** — {years:g} שנים")
             st.caption(sub)
             st.markdown(describe(cand, used_rates))
 
@@ -198,25 +259,30 @@ if "opt_result" in st.session_state:
             cols[2].metric("עלות כוללת", f"{cand.total_cost:,.0f} ₪",
                            help="אפקטיבית — כוללת אינפלציה צפויה על מסלולים צמודים")
             if cand.exit_fee is not None:
-                cols[3].metric(f"יציאה בשנה {exit_year}", f"{cand.exit_fee:,.0f} ₪")
+                cols[3].metric(f"יציאה בשנה {shown_exit_year}", f"{cand.exit_fee:,.0f} ₪")
 
             st.caption(
                 f"קבוע {cand.fixed_share:.0%} · משתנה {cand.variable_share:.0%} · צמוד {cand.cpi_share:.0%}"
             )
 
-    frontier = result["frontier"]
-    st.subheader(f"חזית היעילות ({len(frontier)} נקודות)")
-    if len(frontier) == 1:
+    # --- חזית היעילות, לתקופה שנבחרה ---
+    st.subheader("חזית היעילות")
+    term_choice = st.selectbox(
+        "לאיזו תקופה להציג",
+        options=[r.term_months for r in feasible],
+        format_func=lambda m: f"{m/12:g} שנים",
+        index=0,
+    )
+    chosen = next(r for r in feasible if r.term_months == term_choice)
+
+    if len(chosen.frontier) == 1:
         st.info(
-            "נקודה אחת בלבד — כלומר מסלול אחד גם הזול ביותר וגם היציב ביותר, "
-            "ואין כאן דילמה אמיתית לפתור.",
+            "נקודה אחת בלבד — מסלול אחד גם הזול וגם היציב, ואין כאן דילמה לפתור.",
             icon="💡",
         )
     else:
-        st.caption(
-            "כל שורה היא תמהיל שאי אפשר לשפר בממד אחד בלי להחמיר באחר. "
-            "מלמעלה למטה: זול וחשוף → יקר ויציב."
-        )
+        st.caption("מלמעלה למטה: זול וחשוף → יקר ויציב. כל שורה היא תמהיל שאי אפשר לשפר בממד אחד בלי להחמיר באחר.")
+
     st.dataframe(
         [
             {
@@ -228,7 +294,7 @@ if "opt_result" in st.session_state:
                 "צמוד": f"{f.cpi_share:.0%}",
                 "הרכב": describe(f, used_rates),
             }
-            for f in frontier
+            for f in chosen.frontier
         ],
         use_container_width=True,
         hide_index=True,

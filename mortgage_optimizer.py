@@ -20,7 +20,7 @@
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from itertools import product
 from typing import Iterable, Optional
 
@@ -352,6 +352,114 @@ def _search(
         "n_candidates_evaluated": len(candidates),
         "best": best,
         "frontier": _efficient_frontier(candidates),
+    }
+
+
+@dataclass
+class TermResult:
+    """תוצאת האופטימיזציה לתקופה אחת."""
+    term_months: int
+    feasible: bool
+    best: dict = field(default_factory=dict)
+    frontier: list = field(default_factory=list)
+    linked_required: bool = False
+    reason: str = ""
+
+    @property
+    def term_years(self) -> float:
+        return self.term_months / 12
+
+
+def optimize_across_terms(
+    rates: dict[str, float],
+    loan_amount: float,
+    *,
+    term_years_options: Optional[Iterable[int]] = None,
+    min_fixed_share: float = 1 / 3,
+    max_variable_share: float = 2 / 3,
+    max_monthly_payment: Optional[float] = None,
+    max_cpi_linked_share: Optional[float] = None,
+    **optimize_kwargs,
+) -> dict:
+    """
+    מריץ את האופטימיזציה על **כל תקופה** בטווח, ומחזיר גם את האופטימום
+    הכולל וגם טבלת השוואה בין התקופות.
+
+    ## למה התקופה חייבת להיות חלק מהחיפוש
+
+    קיצור תקופה הוא בדרך כלל החיסכון הגדול ביותר במשכנתא - גדול בהרבה
+    מהפרש של עשירית אחוז בריבית. אבל הוא גם מעלה את ההחזר החודשי, ולכן
+    השאלה האמיתית היא **מה התקופה הקצרה ביותר שהלקוח עומד בה** - וזו
+    שאלה שאי אפשר לענות עליה בלי לחפש.
+
+    כשמוגדרת תקרת החזר, תקופות קצרות מדי פשוט לא ישימות. זו לא תקלה אלא
+    התשובה עצמה: היא מסמנת את הגבול של מה שהלקוח יכול.
+    """
+    if term_years_options is None:
+        term_years_options = range(10, 31, 2)
+
+    results: list[TermResult] = []
+
+    for years in term_years_options:
+        term_months = int(years * 12)
+        constraints = Constraints(
+            loan_amount=loan_amount,
+            term_months=term_months,
+            min_fixed_share=min_fixed_share,
+            max_variable_share=max_variable_share,
+            max_monthly_payment=max_monthly_payment,
+            max_cpi_linked_share=max_cpi_linked_share,
+        )
+        try:
+            res = optimize(rates, constraints, **optimize_kwargs)
+            results.append(TermResult(
+                term_months=term_months,
+                feasible=True,
+                best=res["best"],
+                frontier=res["frontier"],
+                linked_required=res.get("linked_required", False),
+            ))
+        except ValueError as e:
+            results.append(TermResult(
+                term_months=term_months, feasible=False, reason=str(e),
+            ))
+
+    feasible = [r for r in results if r.feasible]
+    if not feasible:
+        raise ValueError(
+            "אף תקופה בטווח שנבדק אינה עומדת באילוצים. "
+            "כנראה תקרת ההחזר נמוכה מדי לסכום הזה - צריך להקטין סכום, "
+            "להעלות תקרה, או לבדוק תקופות ארוכות יותר."
+        )
+
+    # האופטימום הכולל לכל מטרה - על פני כל התקופות
+    objectives = set()
+    for r in feasible:
+        objectives.update(r.best.keys())
+
+    best_overall = {}
+    for obj in objectives:
+        ranked = [(r, r.best[obj]) for r in feasible if obj in r.best]
+        if not ranked:
+            continue
+        key = {
+            "cheapest_total": lambda p: p[1].total_cost,
+            "lowest_monthly": lambda p: p[1].base_monthly_nominal,
+            "most_stable": lambda p: p[1].exposure,
+            "cheapest_exit": lambda p: (p[1].exit_fee or 0.0),
+        }.get(obj, lambda p: p[1].total_cost)
+        term_result, cand = min(ranked, key=key)
+        best_overall[obj] = {"term_months": term_result.term_months, "candidate": cand}
+
+    shortest = min(feasible, key=lambda r: r.term_months)
+
+    return {
+        "per_term": results,
+        "best_overall": best_overall,
+        "shortest_feasible_term_months": shortest.term_months,
+        "shortest_feasible_term_years": round(shortest.term_years, 1),
+        "n_terms_checked": len(results),
+        "n_terms_feasible": len(feasible),
     }
 
 
