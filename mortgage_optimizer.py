@@ -194,14 +194,92 @@ def optimize(
     expected_cpi_pct: float = 2.0,
     early_exit_year: Optional[int] = None,
     market_rates: Optional[dict[str, float]] = None,
+    linked_policy: str = "only_if_needed",
 ) -> dict:
     """
-    סורק את כל החלוקות האפשריות (בצעדים של step_pct) ומחזיר את האופטימום
-    לכל מטרה, ואת חזית היעילות בין עלות לחשיפה.
+    סורק את כל החלוקות האפשריות ומחזיר את האופטימום לכל מטרה, את חזית
+    היעילות, ואת המדיניות שהופעלה בפועל.
+
+    ## linked_policy - מדיניות מסלולים צמודי מדד
+
+    - ``"exclude"`` - לעולם לא צמוד.
+    - ``"only_if_needed"`` (ברירת מחדל) - קודם מחפש **בלי** מסלולים צמודים.
+      רק אם אין אף חלוקה שעומדת באילוצים בלעדיהם, הוא מרחיב את החיפוש
+      ומסמן זאת במפורש.
+    - ``"allow"`` - צמוד נשקל ככל מסלול אחר.
+
+    ברירת המחדל מקודדת עמדה מקצועית: הריבית הנקובה של מסלול צמוד נמוכה,
+    ולכן הוא מוריד את ההחזר החודשי - אבל בפועל הוא יקר יותר, כי הקרן
+    גדלה עם המדד. לכן מגיעים אליו כשהלקוח לא יכול לעמוד בהחזר אחרת.
+
+    השווי של המנגנון הזה הוא שהוא **מזהה את המקרה הזה לבד**: אם התוצאה
+    חוזרת עם ``linked_required=True``, זה אומר שהלקוח לא עומד באילוצים
+    בלי מסלול צמוד - וזו אינפורמציה, לא רק בחירה טכנית.
 
     rates: ריבית שנתית לכל סוג מסלול שזמין, למשל
         {"fixed_unlinked": 4.6, "variable_prime": 5.4, "fixed_linked_cpi": 3.4}
     """
+    if linked_policy not in ("exclude", "only_if_needed", "allow"):
+        raise ValueError(f"linked_policy לא מוכר: {linked_policy}")
+
+    unlinked_rates = {k: v for k, v in rates.items() if k not in CPI_LINKED_TRACK_TYPES}
+    has_linked_available = any(k in CPI_LINKED_TRACK_TYPES for k in rates)
+
+    search_kwargs = dict(
+        step_pct=step_pct,
+        stress_rate_pct=stress_rate_pct,
+        stress_cpi_pct=stress_cpi_pct,
+        expected_cpi_pct=expected_cpi_pct,
+        early_exit_year=early_exit_year,
+        market_rates=market_rates,
+    )
+
+    if linked_policy == "allow":
+        result = _search(rates, constraints, **search_kwargs)
+        result["linked_policy_applied"] = "allow"
+        result["linked_required"] = False
+        return result
+
+    if not unlinked_rates:
+        raise ValueError(
+            "לא הוזנו ריביות לאף מסלול לא צמוד. עם מדיניות שמעדיפה לא צמוד, "
+            "צריך לפחות מסלול אחד כזה."
+        )
+
+    try:
+        result = _search(unlinked_rates, constraints, **search_kwargs)
+        result["linked_policy_applied"] = linked_policy
+        result["linked_required"] = False
+        return result
+    except ValueError:
+        if linked_policy == "exclude" or not has_linked_available:
+            raise
+
+    # לא נמצאה חלוקה בלי צמוד - מרחיבים, ומסמנים שזה מה שקרה
+    result = _search(rates, constraints, **search_kwargs)
+    result["linked_policy_applied"] = "only_if_needed"
+    result["linked_required"] = True
+    result["linked_required_note"] = (
+        "לא נמצאה אף חלוקה שעומדת באילוצים בלי מסלול צמוד מדד. "
+        "כלומר הלקוח אינו עומד בתקרת ההחזר עם מסלולים לא צמודים בלבד. "
+        "המסלול הצמוד מוריד את ההחזר ההתחלתי, אך מייקר את העלות הכוללת - "
+        "שווה לבחון קודם הארכת תקופה או הקטנת סכום."
+    )
+    return result
+
+
+def _search(
+    rates: dict[str, float],
+    constraints: Constraints,
+    *,
+    step_pct: float = 5.0,
+    stress_rate_pct: float = 2.0,
+    stress_cpi_pct: float = 3.0,
+    expected_cpi_pct: float = 2.0,
+    early_exit_year: Optional[int] = None,
+    market_rates: Optional[dict[str, float]] = None,
+) -> dict:
+    """החיפוש הממצה עצמו, ללא מדיניות. ראה optimize."""
     track_types = [t for t in rates if rates[t] is not None]
     if not track_types:
         raise ValueError("לא הוזנו ריביות לאף מסלול")

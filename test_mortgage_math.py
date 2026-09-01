@@ -424,8 +424,12 @@ def test_nominal_payment_is_lower_than_effective_for_linked():
 
 
 def test_zero_inflation_makes_linked_and_unlinked_comparable():
-    """כשהאינפלציה הצפויה 0, ריבית נקובה של צמוד כן ברת-השוואה ישירה."""
-    res = _opt(expected_cpi_pct=0.0)
+    """
+    כשהאינפלציה הצפויה 0, ריבית נקובה של צמוד כן ברת-השוואה ישירה, והמנוע
+    אמור לבחור בה. נבדק עם linked_policy="allow" כי הבדיקה כאן היא על
+    חשבון האינפלציה, לא על מדיניות הבית שמוציאה צמוד כברירת מחדל.
+    """
+    res = _opt(expected_cpi_pct=0.0, linked_policy="allow")
     cheapest = res["best"]["cheapest_total"]
     assert cheapest.allocation.get("fixed_linked_cpi", 0) > 0
 
@@ -450,6 +454,38 @@ def test_impossible_constraints_fail_with_clear_message():
         assert "תקרת ההחזר" in str(e)
     else:
         raise AssertionError("היה צריך להיכשל על אילוץ בלתי אפשרי")
+
+
+def test_linked_excluded_by_default_for_a_comfortable_client():
+    """
+    מדיניות הבית: לא צמוד. לקוח שעומד בתקרה בלי צמוד לא אמור לקבל אותו
+    בכלל, גם אם הריבית הנקובה שלו נמוכה יותר.
+    """
+    res = _opt(constraints={"max_monthly_payment": 7500})
+    assert res["linked_required"] is False
+    for cand in res["best"].values():
+        assert cand.cpi_share == 0
+
+
+def test_linked_appears_only_when_client_cannot_meet_the_cap():
+    """
+    "אלא אם יש ללקוח בעיות" - המנוע מזהה את המקרה לבד: תקרה נמוכה שאי
+    אפשר לעמוד בה בלי צמוד מחזירה linked_required=True.
+    """
+    res = _opt(constraints={"max_monthly_payment": 6200})
+    assert res["linked_required"] is True
+    assert res["best"]["cheapest_total"].cpi_share > 0
+    assert "תקרת ההחזר" in res["linked_required_note"]
+
+
+def test_exclude_policy_never_falls_back_to_linked():
+    """במדיניות exclude המנוע נכשל במקום להחזיר צמוד בשקט."""
+    try:
+        _opt(constraints={"max_monthly_payment": 6200}, linked_policy="exclude")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("היה צריך להיכשל ולא ליפול חזרה לצמוד")
 
 
 def test_most_stable_has_no_more_exposure_than_cheapest():
