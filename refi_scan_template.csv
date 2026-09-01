@@ -1,0 +1,9 @@
+client_id,client_name,phone,track_name,track_type,original_amount,annual_interest_rate_pct,original_period_months,months_elapsed
+1001,ישראל ישראלי,050-0000000,קבועה לא צמודה,fixed_unlinked,500000,5.9,300,30
+1001,ישראל ישראלי,050-0000000,פריים,variable_prime,400000,6.1,300,30
+1002,שרה כהן,050-1111111,קבועה צמודה מדד,fixed_linked_cpi,600000,4.2,360,42
+1002,שרה כהן,050-1111111,משתנה כל 5 לא צמודה,variable_unlinked,300000,5.5,360,42
+1003,דוד לוי,050-2222222,קבועה לא צמודה,fixed_unlinked,750000,6.4,240,18
+1003,דוד לוי,050-2222222,פריים,variable_prime,250000,6.2,240,18
+1004,מיכל אברהם,050-3333333,קבועה לא צמודה,fixed_unlinked,300000,3.1,300,96
+1004,מיכל אברהם,050-3333333,פריים,variable_prime,500000,5.8,300,96

@@ -1,0 +1,1138 @@
+#!/usr/bin/env python3
+"""
+בדיקות למנועי החישוב הפיננסיים (mortgage_math, mortgage_refi, mortgage_review).
+
+למה יש כאן בדיקות בכלל: כל המספרים שהכלים האלה מפיקים מגיעים בסוף להחלטה
+של לקוח על סכום שש-ספרתי. שכבת ה-AI אפשר "להסתכל ולראות אם נשמע הגיוני";
+את שכבת החשבון אי אפשר - טעות בנוסחה נראית סבירה לחלוטין על המסך. לכן כל
+פונקציה מספרית נבדקת כאן מול תוצאה שחושבה עצמאית או מול תכונה מתמטית
+שחייבת להתקיים.
+
+הרצה:
+    python3 -m pytest test_mortgage_math.py -q
+    python3 test_mortgage_math.py          (ללא pytest - מריץ הכל ומדפיס)
+"""
+from __future__ import annotations
+
+from mortgage_math import (
+    blended_offer_stats,
+    monthly_payment_shpitzer,
+    stress_test_stats,
+)
+from mortgage_refi import (
+    analyze_refi,
+    capitalization_fee,
+    compute_exit_cost,
+    index_compensation_fee,
+    present_value_of_payments,
+    remaining_balance,
+)
+from mortgage_review import run_rule_checks
+
+
+def approx(a: float, b: float, tol: float = 0.01) -> bool:
+    return abs(a - b) <= tol
+
+
+# ------------------------------------------------------- לוח סילוקין שפיצר
+
+def test_shpitzer_known_value():
+    """1,000,000 ₪ ב-5% ל-300 חודשים. ערך ידוע: כ-5,845.90 ₪."""
+    assert approx(monthly_payment_shpitzer(1_000_000, 5.0, 300), 5845.90, tol=0.5)
+
+
+def test_shpitzer_zero_interest():
+    """בריבית 0 התשלום הוא פשוט קרן חלקי מספר חודשים."""
+    assert approx(monthly_payment_shpitzer(240_000, 0.0, 240), 1000.0)
+
+
+def test_shpitzer_degenerate_inputs():
+    assert monthly_payment_shpitzer(0, 5.0, 300) == 0.0
+    assert monthly_payment_shpitzer(100_000, 5.0, 0) == 0.0
+
+
+def test_shpitzer_monotonic_in_rate():
+    """ריבית גבוהה יותר => תשלום חודשי גבוה יותר. תכונה שחייבת להתקיים."""
+    low = monthly_payment_shpitzer(800_000, 3.0, 300)
+    high = monthly_payment_shpitzer(800_000, 6.0, 300)
+    assert high > low
+
+
+def test_shpitzer_longer_term_lowers_payment():
+    short = monthly_payment_shpitzer(800_000, 5.0, 180)
+    long = monthly_payment_shpitzer(800_000, 5.0, 360)
+    assert long < short
+
+
+# ------------------------------------------------------------- יתרת קרן
+
+def test_remaining_balance_at_start_equals_principal():
+    assert approx(remaining_balance(1_000_000, 5.0, 300, 0), 1_000_000, tol=1.0)
+
+
+def test_remaining_balance_at_end_is_zero():
+    assert approx(remaining_balance(1_000_000, 5.0, 300, 300), 0.0, tol=1.0)
+
+
+def test_remaining_balance_decreases_over_time():
+    balances = [remaining_balance(1_000_000, 5.0, 300, k) for k in range(0, 301, 30)]
+    assert all(balances[i] > balances[i + 1] for i in range(len(balances) - 1))
+
+
+def test_remaining_balance_amortization_identity():
+    """
+    בדיקה חזקה: יתרת הקרן אחרי k תשלומים חייבת לשוות את הערך הנוכחי של
+    יתרת התשלומים, מהוונת בריבית ההלוואה עצמה. זו זהות מתמטית - אם היא
+    נשברת, אחת משתי הנוסחאות שגויה.
+    """
+    principal, rate, n, k = 900_000, 4.7, 300, 84
+    balance = remaining_balance(principal, rate, n, k)
+    payment = monthly_payment_shpitzer(principal, rate, n)
+    pv = present_value_of_payments(payment, rate, n - k)
+    assert approx(balance, pv, tol=1.0)
+
+
+def test_remaining_balance_zero_interest_is_linear():
+    assert approx(remaining_balance(240_000, 0.0, 240, 120), 120_000, tol=1.0)
+
+
+# ------------------------------------------------------------ עמלת היוון
+
+def test_no_capitalization_fee_when_market_rate_higher():
+    """ריבית השוק גבוהה מריבית ההלוואה => לבנק אין הפסד => אין עמלה."""
+    assert capitalization_fee(700_000, 3.5, 5.5, 240, track_type="fixed_unlinked") == 0.0
+
+
+def test_no_capitalization_fee_when_rates_equal():
+    assert capitalization_fee(700_000, 4.5, 4.5, 240, track_type="fixed_unlinked") == 0.0
+
+
+def test_capitalization_fee_positive_when_loan_rate_higher():
+    """ריבית ההלוואה גבוהה מהשוק => יש עמלה."""
+    fee = capitalization_fee(700_000, 5.5, 3.5, 240, track_type="fixed_unlinked")
+    assert fee > 0
+
+
+def test_capitalization_fee_grows_with_rate_gap():
+    small_gap = capitalization_fee(700_000, 5.0, 4.5, 240, track_type="fixed_unlinked")
+    big_gap = capitalization_fee(700_000, 6.5, 3.0, 240, track_type="fixed_unlinked")
+    assert big_gap > small_gap
+
+
+def test_capitalization_fee_grows_with_remaining_term():
+    """ככל שנותרו יותר שנים, הפסד הריבית של הבנק גדול יותר."""
+    short = capitalization_fee(700_000, 5.5, 3.5, 60, track_type="fixed_unlinked")
+    long = capitalization_fee(700_000, 5.5, 3.5, 300, track_type="fixed_unlinked")
+    assert long > short
+
+
+def test_prime_track_has_no_capitalization_fee():
+    """בפריים הריבית מתעדכנת לפי השוק ממילא - אין הפסד ריבית עתידי."""
+    assert capitalization_fee(700_000, 6.0, 3.0, 240, track_type="variable_prime") == 0.0
+
+
+def test_seniority_discount_reduces_fee():
+    full = capitalization_fee(700_000, 5.5, 3.5, 240, track_type="fixed_unlinked")
+    discounted = capitalization_fee(
+        700_000, 5.5, 3.5, 240, seniority_discount_pct=30.0, track_type="fixed_unlinked"
+    )
+    assert approx(discounted, full * 0.7, tol=1.0)
+
+
+# -------------------------------------------------------- עמלת פיצוי מדד
+
+def test_index_fee_only_for_linked_tracks():
+    assert index_compensation_fee(500_000, 3.0, track_type="fixed_unlinked") == 0.0
+    assert index_compensation_fee(500_000, 3.0, track_type="variable_prime") == 0.0
+    assert index_compensation_fee(500_000, 3.0, track_type="fixed_linked_cpi") > 0
+
+
+def test_index_fee_is_half_the_cpi_change():
+    """הסכום הנפרע כפול מחצית שיעור השינוי במדד."""
+    assert approx(index_compensation_fee(500_000, 4.0, track_type="fixed_linked_cpi"), 10_000.0)
+
+
+def test_index_fee_zero_when_no_inflation():
+    assert index_compensation_fee(500_000, 0.0, track_type="fixed_linked_cpi") == 0.0
+
+
+# ------------------------------------------------------ עלות יציאה מלאה
+
+def _sample_existing_tracks():
+    """משכנתא שנלקחה בשיא הריבית (2023) - בדיוק הקהל למיחזור."""
+    return [
+        {
+            "name": "קבועה לא צמודה",
+            "track_type": "fixed_unlinked",
+            "original_amount": 500_000,
+            "annual_interest_rate_pct": 5.9,
+            "original_period_months": 300,
+            "months_elapsed": 30,
+        },
+        {
+            "name": "פריים",
+            "track_type": "variable_prime",
+            "original_amount": 400_000,
+            "annual_interest_rate_pct": 6.1,
+            "original_period_months": 300,
+            "months_elapsed": 30,
+        },
+    ]
+
+
+def test_exit_cost_sums_components():
+    market = {"fixed_unlinked": 4.3, "variable_prime": 5.2}
+    bd = compute_exit_cost(_sample_existing_tracks(), market_rates_by_track_type=market)
+    assert approx(
+        bd.total_fee,
+        bd.total_capitalization + bd.total_index_compensation + bd.total_no_notice + bd.operational_fee,
+        tol=0.01,
+    )
+
+
+def test_exit_cost_prime_contributes_no_capitalization():
+    market = {"fixed_unlinked": 4.3, "variable_prime": 5.2}
+    bd = compute_exit_cost(_sample_existing_tracks(), market_rates_by_track_type=market)
+    prime = next(t for t in bd.tracks if t.track_type == "variable_prime")
+    assert prime.capitalization == 0.0
+
+
+def test_advance_notice_removes_no_notice_fee():
+    market = {"fixed_unlinked": 4.3, "variable_prime": 5.2}
+    with_notice = compute_exit_cost(
+        _sample_existing_tracks(), market_rates_by_track_type=market, give_advance_notice=True
+    )
+    without = compute_exit_cost(
+        _sample_existing_tracks(), market_rates_by_track_type=market, give_advance_notice=False
+    )
+    assert with_notice.total_no_notice == 0.0
+    assert without.total_no_notice > 0
+    assert without.total_fee > with_notice.total_fee
+
+
+def test_exit_cost_balance_less_than_original():
+    market = {"fixed_unlinked": 4.3, "variable_prime": 5.2}
+    bd = compute_exit_cost(_sample_existing_tracks(), market_rates_by_track_type=market)
+    assert 0 < bd.total_balance < 900_000
+
+
+# ------------------------------------------------------- כדאיות מיחזור
+
+def test_refi_verdict_depends_on_client_horizon():
+    """
+    הבדיקה המרכזית של כל המנוע, ומקורה בממצא אמיתי: מיחזור מ-5.9%/6.1%
+    ל-4.2% חוסך כ-875 ₪ בחודש - אבל גורר עמלת היוון של כ-75,000 ₪, ולכן
+    נקודת האיזון היא כ-86 חודשים.
+
+    המשמעות: אותו מיחזור בדיוק *אינו* כדאי ללקוח שמתכנן 5 שנים, ו*כן*
+    כדאי ללקוח שיישאר 15. אין תשובה אחת - ולכן הכלי חייב לחשוף את נקודת
+    האיזון ולא להכריע לבד.
+    """
+    market = {"fixed_unlinked": 4.3, "variable_prime": 5.2}
+    common = dict(
+        market_rates_by_track_type=market,
+        new_offer_rate_pct=4.2,
+        new_term_months=270,
+    )
+
+    short = analyze_refi("c1", "אופק קצר", _sample_existing_tracks(),
+                         evaluation_horizon_months=60, **common)
+    long = analyze_refi("c1", "אופק ארוך", _sample_existing_tracks(),
+                        evaluation_horizon_months=180, **common)
+
+    assert short.monthly_saving > 0 and long.monthly_saving > 0
+    assert short.breakeven_months > 60
+    assert not short.is_worthwhile          # החיסכון החודשי לבדו מטעה
+    assert long.is_worthwhile               # ובאופק ארוך זה כן משתלם
+    assert short.net_benefit < 0 < long.net_benefit
+
+
+def test_capitalization_fee_is_material_not_rounding():
+    """
+    שמירה מפני רגרסיה: אם מישהו יבטל בטעות את עמלת ההיוון, החישוב עדיין
+    "יעבוד" ופשוט יראה חיסכון גדול יותר - שגיאה שקטה ומסוכנת. הבדיקה
+    מוודאת שהעמלה נשארת רכיב מהותי ולא מתאפסת.
+    """
+    market = {"fixed_unlinked": 4.3, "variable_prime": 5.2}
+    a = analyze_refi(
+        "c1", "לקוח לדוגמה", _sample_existing_tracks(),
+        market_rates_by_track_type=market, new_offer_rate_pct=4.2, new_term_months=270,
+    )
+    assert a.total_fee > 0.05 * a.exit_cost.total_balance
+
+
+def test_refi_not_worthwhile_when_new_rate_is_worse():
+    market = {"fixed_unlinked": 4.3, "variable_prime": 5.2}
+    a = analyze_refi(
+        "c2", "לקוח לדוגמה", _sample_existing_tracks(),
+        market_rates_by_track_type=market,
+        new_offer_rate_pct=7.5,
+        new_term_months=270,
+    )
+    assert a.monthly_saving < 0
+    assert a.breakeven_months is None
+    assert not a.is_worthwhile
+
+
+def test_refi_breakeven_math_is_consistent():
+    """נקודת האיזון חייבת לקיים: חיסכון חודשי * חודשי איזון = עלות היציאה."""
+    market = {"fixed_unlinked": 4.3, "variable_prime": 5.2}
+    a = analyze_refi(
+        "c3", "לקוח לדוגמה", _sample_existing_tracks(),
+        market_rates_by_track_type=market,
+        new_offer_rate_pct=4.2,
+        new_term_months=270,
+    )
+    assert approx(a.monthly_saving * a.breakeven_months, a.total_fee, tol=1.0)
+
+
+def test_refi_longer_term_lowers_payment_but_is_not_free():
+    """
+    מלכודת קלאסית: הארכת התקופה מקטינה את ההחזר ונראית כמו "חיסכון",
+    גם כשהריבית לא השתנתה בכלל. הבדיקה מוודאת שהמנוע אכן מראה חיסכון
+    חודשי במקרה כזה - כלומר שהמספר לבדו מטעה, ולכן הכלי חייב להציג גם
+    את התקופה, לא רק את ההחזר.
+    """
+    market = {"fixed_unlinked": 5.9, "variable_prime": 6.1}  # שוק זהה להלוואה => אין עמלת היוון
+    same_rate_longer_term = analyze_refi(
+        "c4", "לקוח לדוגמה", _sample_existing_tracks(),
+        market_rates_by_track_type=market,
+        new_offer_rate_pct=6.0,
+        new_term_months=360,
+    )
+    assert same_rate_longer_term.monthly_saving > 0
+    assert same_rate_longer_term.term_extended_months > 0
+
+
+# ------------------------------------------- מיחזור חלקי והפרדת הארכת תקופה
+
+def _refi(new_term_months=270, horizon=60):
+    market = {"fixed_unlinked": 4.3, "variable_prime": 5.2}
+    return analyze_refi(
+        "c", "לקוח", _sample_existing_tracks(),
+        market_rates_by_track_type=market,
+        new_offer_rate_pct=4.2,
+        new_term_months=new_term_months,
+        evaluation_horizon_months=horizon,
+    )
+
+
+def test_term_extension_is_separated_from_rate_improvement():
+    """
+    הארכת תקופה חייבת להיספר בנפרד משיפור ריבית. בלי ההפרדה הזו, כל
+    מיחזור עם תקופה ארוכה יותר נראה מוצלח.
+    """
+    same_term = _refi(new_term_months=270)
+    longer_term = _refi(new_term_months=360)
+
+    assert approx(same_term.term_extension_monthly_saving, 0.0, tol=1.0)
+    assert longer_term.term_extension_monthly_saving > 0
+    # שיפור הריבית זהה בשני המקרים - רק התקופה שונה
+    assert approx(same_term.rate_only_monthly_saving, longer_term.rate_only_monthly_saving, tol=1.0)
+
+
+def test_term_extension_illusion_is_flagged():
+    """מיחזור בלי שיפור ריבית כלל, רק תקופה ארוכה יותר - חייב להידלק."""
+    market = {"fixed_unlinked": 5.9, "variable_prime": 6.1}
+    a = analyze_refi(
+        "c", "לקוח", _sample_existing_tracks(),
+        market_rates_by_track_type=market,
+        new_offer_rate_pct=6.0,          # גרוע יותר מהריבית הקיימת
+        new_term_months=400,             # אבל תקופה ארוכה בהרבה
+        evaluation_horizon_months=60,
+    )
+    assert a.monthly_saving > 0                    # "חוסך" בחודש
+    assert a.saving_is_mostly_term_extension       # אבל זו אשליה
+
+
+def test_partial_refi_can_reverse_the_decision():
+    """
+    הממצא המרכזי: חישוב על המשכנתא כולה יכול להגיד "לא כדאי" בזמן
+    שמיחזור של חלק מהמסלולים דווקא משתלם. זה ההבדל בין לוותר על לקוח
+    לבין למצוא אצלו עסקה.
+    """
+    a = _refi(horizon=60)
+    assert a.term_neutral_net_benefit < 0     # מיחזור מלא: לא כדאי
+    assert a.partial_net_benefit > 0          # מיחזור חלקי: כן
+    assert a.partial_beats_full
+
+
+def test_partial_refi_excludes_tracks_with_big_exit_fee():
+    """המסלול הקבוע היקר לצאת ממנו לא ייכלל; הפריים (בלי עמלת היוון) כן."""
+    a = _refi(horizon=60)
+    chosen = {t.track_type for t in a.worthwhile_tracks}
+    assert "variable_prime" in chosen
+    assert "fixed_unlinked" not in chosen
+
+
+def test_best_net_benefit_never_rewards_term_extension():
+    """
+    הדירוג בין לקוחות חייב להתבסס על מספר שלא מתנפח מהארכת תקופה,
+    אחרת לקוחות ידורגו לפי כמה מותחים להם את ההלוואה.
+    """
+    short = _refi(new_term_months=270)
+    long = _refi(new_term_months=400)
+    assert approx(short.best_net_benefit, long.best_net_benefit, tol=1.0)
+
+
+def test_track_level_breakeven_consistency():
+    a = _refi()
+    for t in a.track_analyses:
+        if t.breakeven_months and t.exit_fee > 0:
+            assert approx(t.monthly_saving * t.breakeven_months, t.exit_fee, tol=1.0)
+
+
+# ------------------------------------------------------ אופטימיזציית תמהיל
+
+from mortgage_optimizer import Constraints, optimize  # noqa: E402
+
+_OPT_RATES = {
+    "fixed_unlinked": 4.6,
+    "fixed_linked_cpi": 3.4,
+    "variable_prime": 5.4,
+    "variable_unlinked": 4.9,
+}
+_OPT_MARKET = {
+    "fixed_unlinked": 4.3,
+    "fixed_linked_cpi": 3.2,
+    "variable_prime": 5.2,
+    "variable_unlinked": 4.6,
+}
+
+
+def _opt(**kwargs):
+    c = Constraints(loan_amount=1_200_000, term_months=300, **kwargs.pop("constraints", {}))
+    return optimize(_OPT_RATES, c, step_pct=10, **kwargs)
+
+
+def test_linked_track_is_not_treated_as_cheap():
+    """
+    רגרסיה על באג אמיתי: ריבית נקובה של מסלול צמוד נמוכה יותר, אבל הקרן
+    גדלה עם המדד. בלי התיקון, האופטימיזציה מתכנסת תמיד לצמוד ומדווחת
+    עליו כזול ביותר - טעות שנראית סבירה לחלוטין על המסך.
+    """
+    res = _opt(expected_cpi_pct=2.0)
+    cheapest = res["best"]["cheapest_total"]
+    linked_amount = cheapest.allocation.get("fixed_linked_cpi", 0)
+    assert linked_amount < 1_200_000, "הזול ביותר לא אמור להיות 100% צמוד"
+
+
+def test_nominal_payment_is_lower_than_effective_for_linked():
+    """ההחזר שהלקוח משלם בחודש הראשון נמוך מהעלות האפקטיבית, במסלול צמוד."""
+    res = _opt(expected_cpi_pct=3.0)
+    lowest = res["best"]["lowest_monthly"]
+    if lowest.cpi_share > 0:
+        assert lowest.base_monthly_nominal < lowest.base_monthly
+
+
+def test_zero_inflation_makes_linked_and_unlinked_comparable():
+    """
+    כשהאינפלציה הצפויה 0, ריבית נקובה של צמוד כן ברת-השוואה ישירה, והמנוע
+    אמור לבחור בה. נבדק עם linked_policy="allow" כי הבדיקה כאן היא על
+    חשבון האינפלציה, לא על מדיניות הבית שמוציאה צמוד כברירת מחדל.
+    """
+    res = _opt(expected_cpi_pct=0.0, linked_policy="allow")
+    cheapest = res["best"]["cheapest_total"]
+    assert cheapest.allocation.get("fixed_linked_cpi", 0) > 0
+
+
+def test_min_fixed_share_constraint_is_respected():
+    res = _opt()
+    for cand in res["best"].values():
+        assert cand.fixed_share >= 1 / 3 - 1e-6
+
+
+def test_max_monthly_payment_filters_candidates():
+    """התקרה נבדקת מול ההחזר בפועל, לא מול העלות האפקטיבית."""
+    res = _opt(constraints={"max_monthly_payment": 7200})
+    for cand in res["best"].values():
+        assert cand.base_monthly_nominal <= 7200 + 1e-6
+
+
+def test_impossible_constraints_fail_with_clear_message():
+    try:
+        _opt(constraints={"max_monthly_payment": 500})
+    except ValueError as e:
+        assert "תקרת ההחזר" in str(e)
+    else:
+        raise AssertionError("היה צריך להיכשל על אילוץ בלתי אפשרי")
+
+
+def test_linked_excluded_by_default_for_a_comfortable_client():
+    """
+    מדיניות הבית: לא צמוד. לקוח שעומד בתקרה בלי צמוד לא אמור לקבל אותו
+    בכלל, גם אם הריבית הנקובה שלו נמוכה יותר.
+    """
+    res = _opt(constraints={"max_monthly_payment": 7500})
+    assert res["linked_required"] is False
+    for cand in res["best"].values():
+        assert cand.cpi_share == 0
+
+
+def test_linked_appears_only_when_client_cannot_meet_the_cap():
+    """
+    "אלא אם יש ללקוח בעיות" - המנוע מזהה את המקרה לבד: תקרה נמוכה שאי
+    אפשר לעמוד בה בלי צמוד מחזירה linked_required=True.
+    """
+    res = _opt(constraints={"max_monthly_payment": 6600})
+    assert res["linked_required"] is True
+    assert res["best"]["cheapest_total"].cpi_share > 0
+    assert "תקרת ההחזר" in res["linked_required_note"]
+
+
+def test_exclude_policy_never_falls_back_to_linked():
+    """במדיניות exclude המנוע נכשל במקום להחזיר צמוד בשקט."""
+    try:
+        _opt(constraints={"max_monthly_payment": 6600}, linked_policy="exclude")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("היה צריך להיכשל ולא ליפול חזרה לצמוד")
+
+
+def test_shorter_term_costs_less_but_pays_more_monthly():
+    """
+    התמורה המרכזית במשכנתא, ולכן חייבת להיות מובטחת: תקופה קצרה יותר
+    מייקרת את ההחזר החודשי ומוזילה משמעותית את העלות הכוללת.
+    """
+    from mortgage_optimizer import optimize_across_terms
+
+    res = optimize_across_terms(
+        {"fixed_unlinked": 4.6, "variable_prime": 5.4, "variable_unlinked": 4.9},
+        1_200_000, term_years_options=[20, 30], step_pct=10,
+    )
+    by_term = {r.term_months // 12: r for r in res["per_term"] if r.feasible}
+    short, long = by_term[20].best["cheapest_total"], by_term[30].best["cheapest_total"]
+
+    assert short.base_monthly_nominal > long.base_monthly_nominal
+    assert short.total_cost < long.total_cost
+
+
+def test_payment_cap_determines_shortest_feasible_term():
+    """
+    "מה התקופה הקצרה ביותר שהלקוח עומד בה" - תקרה נמוכה יותר דוחפת את
+    התקופה המינימלית כלפי מעלה. זו התשובה המעשית שהיועץ צריך.
+    """
+    from mortgage_optimizer import optimize_across_terms
+
+    rates = {"fixed_unlinked": 4.6, "variable_prime": 5.4, "variable_unlinked": 4.9}
+    generous = optimize_across_terms(rates, 1_200_000, max_monthly_payment=9000, step_pct=10)
+    tight = optimize_across_terms(rates, 1_200_000, max_monthly_payment=7000, step_pct=10)
+
+    assert tight["shortest_feasible_term_months"] > generous["shortest_feasible_term_months"]
+
+
+def test_infeasible_terms_are_reported_not_hidden():
+    """תקופות שלא עומדות באילוץ מדווחות כלא-ישימות, לא נעלמות בשקט."""
+    from mortgage_optimizer import optimize_across_terms
+
+    res = optimize_across_terms(
+        {"fixed_unlinked": 4.6, "variable_prime": 5.4, "variable_unlinked": 4.9},
+        1_200_000, max_monthly_payment=7000, step_pct=10,
+    )
+    assert res["n_terms_checked"] > res["n_terms_feasible"]
+    assert any(not r.feasible and r.reason for r in res["per_term"])
+
+
+def test_all_terms_infeasible_raises_clearly():
+    from mortgage_optimizer import optimize_across_terms
+
+    try:
+        optimize_across_terms(
+            {"fixed_unlinked": 4.6, "variable_prime": 5.4, "variable_unlinked": 4.9},
+            1_200_000, max_monthly_payment=800, step_pct=10,
+        )
+    except ValueError as e:
+        assert "אף תקופה" in str(e)
+    else:
+        raise AssertionError("היה צריך להיכשל כשאף תקופה אינה ישימה")
+
+
+def test_diversification_blocks_single_track_answers():
+    """
+    רגרסיה על התנהגות שהמנוע הפגין בפועל: בלי אילוצי פיזור הוא החזיר
+    100% במסלול אחד כתשובה "אופטימלית" - נכון מתמטית, ולא משהו שיועץ
+    מגיש, כי הוא מרכז את כל הסיכון בנקודה אחת.
+    """
+    res = _opt()
+    for cand in res["best"].values():
+        assert cand.n_tracks >= 3
+
+
+def test_no_single_track_exceeds_its_cap():
+    res = _opt()
+    for cand in res["best"].values():
+        biggest = max(v for v in cand.allocation.values() if v > 0)
+        assert biggest / 1_200_000 <= 0.5 + 1e-6
+
+
+def test_prime_share_is_capped_separately():
+    """פריים מתעדכן מיידית עם ריבית בנק ישראל, ולכן יש לו תקרה נפרדת."""
+    res = _opt()
+    for cand in res["best"].values():
+        assert cand.allocation.get("variable_prime", 0) / 1_200_000 <= 1 / 3 + 1e-6
+
+
+def test_included_tracks_are_meaningful_not_rounding_errors():
+    """
+    רגרסיה: עם דרישת שלושה מסלולים בלבד, המנוע "קיים" אותה בכך ששם 5%
+    במסלול היקר. מסלול כזה מוסיף סעיף לתיק ולא מוסיף פיזור.
+    """
+    res = _opt()
+    for cand in res["best"].values():
+        smallest = min(v for v in cand.allocation.values() if v > 0)
+        assert smallest / 1_200_000 >= 0.15 - 1e-6
+
+
+def test_balanced_objective_lands_near_equal_thirds():
+    """
+    "לרוב שליש-שליש-שליש" - המטרה המאוזנת צריכה להחזיר חלוקה קרובה לשווה,
+    ולא להיגרר אחרי הריבית הזולה ביותר.
+    """
+    res = _opt()
+    cand = res["best"]["most_balanced"]
+    shares = sorted(v / 1_200_000 for v in cand.allocation.values() if v > 0)
+    assert shares[-1] - shares[0] <= 0.12, f"חלוקה לא מאוזנת: {shares}"
+
+
+def test_balanced_costs_more_than_pure_optimum_but_not_much():
+    """
+    התמהיל המאוזן אינו הזול ביותר - אחרת לא היה טעם באילוץ. אבל המחיר
+    שלו צריך להיות קטן, אחרת מדיניות הבית יקרה מדי.
+    """
+    res = _opt()
+    balanced = res["best"]["most_balanced"].total_cost
+    cheapest = res["best"]["cheapest_total"].total_cost
+    assert balanced >= cheapest
+    assert (balanced - cheapest) / cheapest < 0.05
+
+
+def test_impossible_diversification_names_the_blocker():
+    """כששני מסלולים בלבד סומנו, דרישת שלושה אינה ניתנת לקיום - וההודעה אומרת זאת."""
+    c = Constraints(loan_amount=1_200_000, term_months=300)
+    try:
+        optimize({"fixed_unlinked": 4.6, "variable_prime": 5.4}, c, step_pct=10)
+    except ValueError as e:
+        assert "פיזור" in str(e)
+    else:
+        raise AssertionError("היה צריך להיכשל על אילוצי פיזור")
+
+
+def test_diversification_can_force_linked_tracks_in():
+    """
+    שני כללי הבית יכולים להתנגש, וזה מתועד כאן במפורש: אם זמינים רק שני
+    מסלולים לא-צמודים, דרישת שלושת המסלולים לא ניתנת לקיום בלעדיהם -
+    והמנוע נאלץ להכניס מסלול צמוד ומסמן linked_required.
+
+    זה לא באג אלא אינפורמציה: היא אומרת ליועץ שכדי להימנע מצמוד הוא צריך
+    לפתוח עוד מסלול לא-צמוד, לא להוריד את דרישת הפיזור.
+    """
+    from mortgage_optimizer import Constraints, optimize
+
+    only_two_unlinked = {"fixed_unlinked": 4.6, "variable_prime": 5.4, "fixed_linked_cpi": 3.4}
+    res = optimize(only_two_unlinked, Constraints(1_200_000, 300), step_pct=10)
+    assert res["linked_required"] is True
+    assert res["best"]["cheapest_total"].cpi_share > 0
+
+
+def test_most_stable_has_no_more_exposure_than_cheapest():
+    res = _opt()
+    assert res["best"]["most_stable"].exposure <= res["best"]["cheapest_total"].exposure + 1e-6
+
+
+def test_frontier_is_monotonic():
+    """חזית יעילות: ככל שהעלות עולה, החשיפה יורדת. אחרת זו לא חזית."""
+    res = _opt()
+    frontier = res["frontier"]
+    assert frontier
+    for a, b in zip(frontier, frontier[1:]):
+        assert b.total_cost >= a.total_cost - 1e-6
+        assert b.exposure <= a.exposure + 1e-6
+
+
+def test_frontier_collapses_when_one_track_dominates():
+    """
+    כשמסלול אחד גם הזול ביותר וגם היציב ביותר, אין דילמה - והחזית מצטמצמת
+    לנקודה אחת. זו תשובה נכונה, לא תקלה: המנוע לא אמור להמציא פשרה
+    כשאין מה לפשר עליו.
+    """
+    res = optimize(
+        {"fixed_unlinked": 4.6, "variable_prime": 5.4, "variable_unlinked": 4.9},
+        Constraints(loan_amount=1_200_000, term_months=300),
+        step_pct=10,
+    )
+    assert len(res["frontier"]) == 1
+    # החשיפה כבר אינה אפס: אילוצי הפיזור מחייבים מסלול משתנה בתמהיל, ולכן
+    # "היציב ביותר" הוא היציב שאפשר - לא תמהיל חסין לחלוטין.
+    assert res["frontier"][0].exposure > 0
+
+
+def test_more_tracks_give_the_optimizer_room_to_work():
+    """
+    ממצא מדיד: אילוצי הפיזור מצמצמים את מרחב הבחירה חזק מאוד. עם שלושה
+    מסלולים בלבד נותרות בודדות חלוקות וחזית של נקודה אחת - כלומר הכללים
+    קובעים את התשובה ולא נשארת אופטימיזציה. פתיחת מסלולים נוספים היא מה
+    שמחזיר לאופטימיזר מרחב עבודה.
+    """
+    c = Constraints(loan_amount=1_200_000, term_months=300)
+    three = optimize(
+        {"fixed_unlinked": 4.6, "variable_prime": 5.4, "variable_unlinked": 4.9},
+        c, step_pct=5,
+    )
+    five = optimize(_OPT_RATES | {"variable_linked_cpi": 3.6}, c, step_pct=5, linked_policy="allow")
+
+    assert five["n_candidates_evaluated"] > 10 * three["n_candidates_evaluated"]
+    assert len(five["frontier"]) > len(three["frontier"])
+    # בחזית אמיתית הקצה הזול חשוף יותר מהקצה היציב
+    assert five["frontier"][0].exposure > five["frontier"][-1].exposure
+
+
+def test_cheapest_exit_beats_others_on_exit_cost():
+    res = _opt(early_exit_year=5, market_rates=_OPT_MARKET)
+    best_exit = res["best"]["cheapest_exit"]
+    for key, cand in res["best"].items():
+        if key != "cheapest_exit" and cand.exit_fee is not None:
+            assert best_exit.exit_fee <= cand.exit_fee + 1e-6
+
+
+# ------------------------------------------------ בדיקות הכלל של בקרת האיכות
+
+def _sound_mix():
+    return [
+        {"name": "קבועה", "track_type": "fixed_unlinked", "amount": 400_000,
+         "period_months": 240, "annual_interest_rate_pct": 4.5, "linkage": "unlinked"},
+        {"name": "פריים", "track_type": "variable_prime", "amount": 350_000,
+         "period_months": 300, "annual_interest_rate_pct": 5.4, "linkage": "unlinked"},
+        {"name": "משתנה", "track_type": "variable_unlinked", "amount": 250_000,
+         "period_months": 300, "annual_interest_rate_pct": 4.8, "linkage": "unlinked"},
+    ]
+
+
+def _checks_for(tracks, **kwargs):
+    stats = blended_offer_stats({"bank_name": "x", "tracks": tracks})
+    stress = stress_test_stats(tracks)
+    return run_rule_checks(tracks, stats, stress, **kwargs)
+
+
+def test_sound_mix_produces_no_findings():
+    """
+    הבדיקה החשובה ביותר: אין אזעקות שווא על תמהיל תקין, כשכל הנתונים
+    הושלמו - כולל אישור מפורש שאין התחייבויות קיימות.
+    """
+    findings = _checks_for(
+        _sound_mix(), property_value=1_600_000, monthly_income=25_000,
+        buyer_type="first_home", horizon_years=25, other_monthly_obligations=0,
+    )
+    assert findings == []
+
+
+def test_missing_obligations_is_flagged_but_explicit_zero_is_not():
+    """
+    מיולי 2026 הבנק מחשב יחס החזר על כל ההלוואות יחד. יועץ ששכח להזין
+    התחייבויות יקבל תשובה אופטימית מדי, ולכן חוסר הנתון מסומן - אבל
+    "אין התחייבויות" שהוזן במפורש אינו הערה.
+    """
+    common = dict(property_value=1_600_000, monthly_income=25_000,
+                  buyer_type="first_home", horizon_years=25)
+    not_entered = _checks_for(_sound_mix(), **common)
+    entered_zero = _checks_for(_sound_mix(), other_monthly_obligations=0, **common)
+
+    assert any("התחייבויות קיימות" in f["title"] for f in not_entered)
+    assert entered_zero == []
+
+
+def test_obligations_push_pti_over_the_line():
+    """
+    אותו תמהיל ואותה הכנסה: בלי התחייבויות עובר, ועם החזר רכב נוסף חורג.
+    זה בדיוק מה שהשתנה ביולי 2026.
+    """
+    clean = _checks_for(_sound_mix(), monthly_income=16_000, other_monthly_obligations=0)
+    with_car = _checks_for(_sound_mix(), monthly_income=16_000, other_monthly_obligations=1_800)
+
+    assert not any("יחס ההחזר" in f["title"] for f in clean)
+    assert any("יחס ההחזר" in f["title"] for f in with_car)
+
+
+def test_pti_over_regulatory_ceiling_is_distinguished_from_bank_practice():
+    """שני ספים שונים: מה שבנקים מאשרים בפועל, ומה שבנק ישראל מתיר בכלל."""
+    practice = _checks_for(_sound_mix(), monthly_income=16_000, other_monthly_obligations=1_800)
+    ceiling = _checks_for(_sound_mix(), monthly_income=16_000, other_monthly_obligations=5_000)
+
+    assert any("שהבנקים מאשרים בפועל" in f["title"] for f in practice)
+    assert any("תקרת בנק ישראל" in f["title"] for f in ceiling)
+
+
+def test_checks_skip_when_data_missing():
+    """בלי נתוני לקוח, הבדיקות התלויות בהם פשוט לא רצות - לא ממציאות."""
+    assert _checks_for(_sound_mix()) == []
+
+
+def test_low_fixed_share_is_flagged():
+    tracks = [
+        {"name": "קבועה", "track_type": "fixed_unlinked", "amount": 100_000,
+         "period_months": 240, "annual_interest_rate_pct": 4.5, "linkage": "unlinked"},
+        {"name": "פריים", "track_type": "variable_prime", "amount": 900_000,
+         "period_months": 300, "annual_interest_rate_pct": 5.4, "linkage": "unlinked"},
+    ]
+    titles = [f["title"] for f in _checks_for(tracks)]
+    assert any("קבועה" in t for t in titles)
+
+
+def test_ltv_over_limit_is_flagged():
+    findings = _checks_for(_sound_mix(), property_value=1_100_000, buyer_type="first_home")
+    assert any("מימון" in f["title"] for f in findings)
+    assert any(f["severity"] == "critical" for f in findings)
+
+
+def test_investment_buyer_has_stricter_ltv():
+    """אותה עסקה בדיוק: תקינה לדירה יחידה, חורגת לדירה להשקעה."""
+    ok = _checks_for(_sound_mix(), property_value=1_400_000, buyer_type="first_home")
+    bad = _checks_for(_sound_mix(), property_value=1_400_000, buyer_type="investment")
+    assert not any("מימון" in f["title"] for f in ok)
+    assert any("מימון" in f["title"] for f in bad)
+
+
+def test_high_pti_is_flagged():
+    findings = _checks_for(_sound_mix(), monthly_income=10_000, other_monthly_obligations=0)
+    assert any("יחס ההחזר" in f["title"] for f in findings)
+
+
+def test_early_repayment_exposure_flagged_against_short_horizon():
+    """הכשל המתועד בענף: מסלול קבוע ארוך מול לקוח שמתכנן לפרוע מוקדם."""
+    findings = _checks_for(_sound_mix(), horizon_years=3)
+    assert any("פירעון מוקדם" in f["title"] for f in findings)
+
+
+def test_no_early_repayment_flag_for_long_horizon():
+    findings = _checks_for(_sound_mix(), horizon_years=25)
+    assert not any("פירעון מוקדם" in f["title"] for f in findings)
+
+
+# ------------------------------- דוח יתרות: מספרים מדווחים מול משוחזרים
+
+def _reported_track(**over):
+    t = {
+        "name": "קבועה לא צמודה",
+        "track_type": "fixed_unlinked",
+        "original_amount": 600000,
+        "annual_interest_rate_pct": 5.0,
+        "original_period_months": 300,
+        "months_elapsed": 60,
+    }
+    t.update(over)
+    return t
+
+
+def test_resolve_track_state_reconstructs_when_nothing_reported():
+    """בלי שדות מדוח יתרות ההתנהגות זהה לשחזור - תאימות לאחור מלאה."""
+    from mortgage_refi import resolve_track_state, remaining_balance
+    t = _reported_track()
+    st = resolve_track_state(t)
+    assert st.balance_source == "reconstructed"
+    assert st.term_source == "reconstructed"
+    expected = remaining_balance(600000, 5.0, 300, 60)
+    assert abs(st.balance - expected) < 1e-6
+    assert st.remaining_months == 240
+
+
+def test_reconstructed_payment_equals_original_payment():
+    """
+    זהות שפיצר: תשלום על היתרה לתקופה שנותרה שווה לתשלום המקורי.
+    בלי זה המעבר לחישוב מהיתרה היה משנה בשקט תוצאות קיימות.
+    """
+    from mortgage_refi import resolve_track_state
+    st = resolve_track_state(_reported_track())
+    original_payment = monthly_payment_shpitzer(600000, 5.0, 300)
+    assert abs(st.monthly_payment - original_payment) < 1e-6
+
+
+def test_reported_balance_overrides_reconstruction():
+    from mortgage_refi import resolve_track_state
+    st = resolve_track_state(_reported_track(current_balance=555000, remaining_months=222))
+    assert st.balance_source == "reported"
+    assert st.balance == 555000
+    assert st.remaining_months == 222
+    assert st.term_source == "reported"
+
+
+def test_reported_payment_is_used_verbatim():
+    from mortgage_refi import resolve_track_state
+    st = resolve_track_state(_reported_track(current_balance=555000, current_monthly_payment=3777.5))
+    assert st.payment_source == "reported"
+    assert st.monthly_payment == 3777.5
+
+
+def test_reported_balance_drives_the_exit_fee():
+    """יתרה מדווחת גבוהה יותר חייבת לייצר עמלת היוון גבוהה יותר."""
+    from mortgage_refi import compute_exit_cost
+    market = {"fixed_unlinked": 3.0}
+    low = compute_exit_cost([_reported_track(current_balance=400000, remaining_months=240)],
+                            market_rates_by_track_type=market)
+    high = compute_exit_cost([_reported_track(current_balance=520000, remaining_months=240)],
+                             market_rates_by_track_type=market)
+    assert high.total_capitalization > low.total_capitalization
+    assert abs(high.total_balance - 520000) < 1e-6
+
+
+def test_reconstruction_understates_a_linked_balance():
+    """
+    הנקודה שבגללה דוח יתרות עדיף על שחזור: במסלול צמוד מדד השחזור
+    מפחית קרן נומינלית ומתעלם מההצמדה שנצברה, ולכן נותן יתרה נמוכה מדי.
+    """
+    from mortgage_refi import resolve_track_state, reconcile_tracks
+    linked = _reported_track(track_type="fixed_linked_cpi", annual_interest_rate_pct=3.0)
+    reconstructed = resolve_track_state(linked).balance
+    # הצמדה מצטברת מעלה את היתרה בפועל מעל השחזור הנומינלי
+    with_index = dict(linked, current_balance=reconstructed * 1.09)
+    st = resolve_track_state(with_index)
+    assert st.balance > reconstructed
+    assert st.balance_gap > 0
+
+    rec = reconcile_tracks([with_index])
+    assert len(rec) == 1
+    assert rec[0].severity == "expected"
+    assert "הצמדה" in rec[0].explanation
+
+
+def test_reconciliation_flags_unexplained_gap_on_unlinked_track():
+    from mortgage_refi import resolve_track_state, reconcile_tracks
+    base = resolve_track_state(_reported_track()).balance
+    rec = reconcile_tracks([_reported_track(current_balance=base * 1.12)])
+    assert rec[0].severity == "check"
+
+    # ופער קטן לא אמור להקים רעש
+    quiet = reconcile_tracks([_reported_track(current_balance=base * 1.005)])
+    assert quiet[0].severity == "ok"
+
+
+def test_reconciliation_notes_a_partial_repayment():
+    from mortgage_refi import resolve_track_state, reconcile_tracks
+    base = resolve_track_state(_reported_track()).balance
+    rec = reconcile_tracks([_reported_track(current_balance=base * 0.80)])
+    assert rec[0].severity == "check"
+    assert rec[0].gap < 0
+    assert "פירעון חלקי" in rec[0].explanation
+
+
+# ------------------------------------- תחנות עדכון ריבית ופטור מעמלת היוון
+
+def test_frequently_resetting_variable_track_is_exempt():
+    """מסלול משתנה שמתעדכן שנתית או תכוף יותר פטור מעמלת היוון לגמרי."""
+    from mortgage_refi import capitalization_fee, capitalization_exemption
+    fee = capitalization_fee(500000, 5.5, 3.0, 240,
+                             track_type="variable_unlinked", rate_reset_period_months=12)
+    assert fee == 0.0
+    exempt, reason = capitalization_exemption("variable_unlinked", 12, None)
+    assert exempt and "שנה או פחות" in reason
+
+
+def test_multi_year_variable_track_is_not_exempt_between_stations():
+    from mortgage_refi import capitalization_fee
+    fee = capitalization_fee(500000, 5.5, 3.0, 240,
+                             track_type="variable_unlinked", rate_reset_period_months=60,
+                             months_to_next_reset=30)
+    assert fee > 0
+
+
+def test_repaying_at_the_station_removes_the_capitalization_fee():
+    """
+    אותו מסלול בדיוק, אותו יום - ההבדל היחיד הוא פירעון בתחנה.
+    זו ההמלצה שמחזירה ללקוח את מלוא העמלה.
+    """
+    from mortgage_refi import capitalization_fee
+    between = capitalization_fee(500000, 5.5, 3.0, 240,
+                                 track_type="variable_unlinked",
+                                 rate_reset_period_months=60, months_to_next_reset=4)
+    at_station = capitalization_fee(500000, 5.5, 3.0, 240,
+                                    track_type="variable_unlinked",
+                                    rate_reset_period_months=60, months_to_next_reset=0)
+    assert between > 0
+    assert at_station == 0.0
+
+
+def test_exit_cost_reports_what_waiting_for_the_station_saves():
+    from mortgage_refi import compute_exit_cost
+    tracks = [{
+        "name": "משתנה כל 5 שנים",
+        "track_type": "variable_unlinked",
+        "current_balance": 500000,
+        "remaining_months": 240,
+        "annual_interest_rate_pct": 5.5,
+        "rate_reset_period_months": 60,
+        "months_to_next_reset": 4,
+    }]
+    ec = compute_exit_cost(tracks, market_rates_by_track_type={"variable_unlinked": 3.0})
+    t = ec.tracks[0]
+    assert t.capitalization > 0
+    # בתחנה העמלה מתאפסת, ולכן ההמתנה שווה בדיוק את מלוא העמלה של היום
+    assert t.saving_from_waiting_for_reset == t.capitalization
+    assert ec.saving_from_waiting_for_resets > 0
+    upcoming = ec.tracks_with_upcoming_reset
+    assert len(upcoming) == 1 and upcoming[0].months_to_next_reset == 4
+
+
+def test_prime_stays_exempt_regardless_of_reset_fields():
+    from mortgage_refi import capitalization_fee
+    assert capitalization_fee(500000, 6.0, 3.0, 240, track_type="variable_prime",
+                              rate_reset_period_months=60, months_to_next_reset=30) == 0.0
+
+
+def test_upcoming_resets_are_sorted_by_nearest_station():
+    """'חכה חודשיים' שווה יותר מ'חכה שלוש שנים' - הסדר הוא לפי קרבה."""
+    from mortgage_refi import compute_exit_cost
+    def tr(name, to_reset):
+        return {"name": name, "track_type": "variable_unlinked", "current_balance": 400000,
+                "remaining_months": 200, "annual_interest_rate_pct": 5.5,
+                "rate_reset_period_months": 60, "months_to_next_reset": to_reset}
+    ec = compute_exit_cost([tr("רחוק", 33), tr("קרוב", 3)],
+                           market_rates_by_track_type={"variable_unlinked": 3.0})
+    assert [t.name for t in ec.tracks_with_upcoming_reset] == ["קרוב", "רחוק"]
+
+
+# ----------------------------------------- עיבוד דוח יתרות (דטרמיניסטי)
+
+def _report(**over):
+    r = {
+        "bank_name": "הפועלים",
+        "report_date": "01/09/2026",
+        "document_type": "balance_report",
+        "total_balance": 900000,
+        "tracks": [
+            {"name": "קבועה לא צמודה", "track_type": "fixed_unlinked",
+             "current_balance": 500000, "remaining_months": 180,
+             "annual_interest_rate_pct": 5.2, "rate_reset_period_months": None,
+             "next_reset_date": None, "rate_anchor": None},
+            {"name": "משתנה כל 5", "track_type": "variable_unlinked",
+             "current_balance": 400000, "remaining_months": 180,
+             "annual_interest_rate_pct": 5.6, "rate_reset_period_months": 60,
+             "next_reset_date": "01/12/2026", "rate_anchor": "עוגן אג\"ח ממשלתי"},
+        ],
+    }
+    r.update(over)
+    return r
+
+
+def test_report_date_parsing_handles_israeli_formats():
+    from datetime import date
+    from mortgage_balance_extraction import parse_report_date
+    assert parse_report_date("15/03/2027") == date(2027, 3, 15)
+    assert parse_report_date("15.03.2027") == date(2027, 3, 15)
+    assert parse_report_date("2027-03-15") == date(2027, 3, 15)
+    assert parse_report_date(None) is None
+    assert parse_report_date("לא צוין") is None
+
+
+def test_past_reset_date_rolls_forward_by_the_period():
+    from datetime import date
+    from mortgage_balance_extraction import months_to_next_reset
+    # תחנה שעברה לפני שנתיים וחצי, עדכון כל 5 שנים -> התחנה הבאה בעוד 30 חודשים
+    assert months_to_next_reset("01/03/2024", 60, today=date(2026, 9, 1)) == 30
+
+
+def test_past_reset_date_without_period_is_unknown_not_zero():
+    """
+    להחזיר 0 היה מצהיר "אתה בתחנה" ולאפס עמלת היוון אמיתית על סמך ניחוש.
+    הכיוון הבטוח הוא לא לדעת.
+    """
+    from datetime import date
+    from mortgage_balance_extraction import months_to_next_reset
+    assert months_to_next_reset("01/03/2024", None, today=date(2026, 9, 1)) is None
+
+
+def test_to_refi_tracks_feeds_the_engine():
+    from datetime import date
+    from mortgage_balance_extraction import to_refi_tracks
+    tracks = to_refi_tracks(_report(), today=date(2026, 9, 1))
+    assert len(tracks) == 2
+    variable = tracks[1]
+    assert variable["current_balance"] == 400000
+    assert variable["months_to_next_reset"] == 3
+    # שדות ריקים לא הופכים לאפסים שנראים כמו נתונים
+    assert "next_reset_date" not in tracks[0]
+
+
+def test_validate_flags_missing_rate_as_blocker():
+    from mortgage_balance_extraction import validate_report, blockers
+    r = _report()
+    r["tracks"][0]["annual_interest_rate_pct"] = None
+    issues = validate_report(r)
+    assert any(i["field"].endswith("annual_interest_rate_pct") for i in blockers(issues))
+
+
+def test_validate_flags_missing_station_date_as_money_warning():
+    from mortgage_balance_extraction import validate_report
+    r = _report()
+    r["tracks"][1]["next_reset_date"] = None
+    issues = validate_report(r)
+    warn = [i for i in issues if i["field"].endswith("next_reset_date")]
+    assert warn and warn[0]["severity"] == "warn"
+
+
+def test_validate_catches_a_missing_track_via_total_mismatch():
+    from mortgage_balance_extraction import validate_report
+    issues = validate_report(_report(total_balance=1_200_000))
+    assert any(i["field"] == "total_balance" for i in issues)
+    assert not validate_report(_report())  or all(
+        i["field"] != "total_balance" for i in validate_report(_report()))
+
+
+def test_validate_recognises_an_offer_fed_to_the_wrong_tool():
+    from mortgage_balance_extraction import validate_report
+    issues = validate_report(_report(document_type="offer"))
+    assert any(i["field"] == "document_type" for i in issues)
+
+
+def test_end_to_end_station_changes_the_exit_cost():
+    """
+    מקצה לקצה: אותו דוח יתרות בדיוק, ההבדל היחיד הוא אם ידוע שיש תחנה
+    קרובה. זה הפער בין המלצה נכונה למיותרת.
+    """
+    from datetime import date
+    from mortgage_balance_extraction import to_refi_tracks
+    from mortgage_refi import compute_exit_cost
+    market = {"fixed_unlinked": 4.0, "variable_unlinked": 4.0}
+
+    with_station = compute_exit_cost(
+        to_refi_tracks(_report(), today=date(2026, 9, 1)),
+        market_rates_by_track_type=market)
+
+    blind = _report()
+    blind["tracks"][1]["next_reset_date"] = None
+    without_station = compute_exit_cost(
+        to_refi_tracks(blind, today=date(2026, 9, 1)),
+        market_rates_by_track_type=market)
+
+    # העמלה *היום* זהה בשני המקרים, וזה נכון: מי שפורע עכשיו משלם אותה
+    # בין אם ידע על התחנה ובין אם לא.
+    assert abs(without_station.total_capitalization - with_station.total_capitalization) < 1e-9
+    assert with_station.total_capitalization > 0
+
+    # ההבדל הוא בעצה: בלי תאריך התחנה אי אפשר להמליץ להמתין, ועם התאריך
+    # ההמתנה של 3 חודשים שווה בדיוק את מלוא עמלת ההיוון.
+    assert without_station.saving_from_waiting_for_resets == 0
+    saving = with_station.saving_from_waiting_for_resets
+    assert saving > 0
+    upcoming = with_station.tracks_with_upcoming_reset
+    assert len(upcoming) == 1 and upcoming[0].months_to_next_reset == 3
+    assert abs(saving - upcoming[0].capitalization) < 1e-9
+
+
+# ------------------------------------------------------------------ runner
+
+if __name__ == "__main__":
+    import sys
+    import traceback
+
+    tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
+    passed, failed = 0, []
+    for name, fn in tests:
+        try:
+            fn()
+            passed += 1
+        except Exception:  # noqa: BLE001 - זה runner של בדיקות, רוצים לראות הכל
+            failed.append((name, traceback.format_exc()))
+
+    print(f"\n{passed}/{len(tests)} בדיקות עברו")
+    for name, tb in failed:
+        print(f"\n❌ {name}\n{tb}")
+    sys.exit(1 if failed else 0)

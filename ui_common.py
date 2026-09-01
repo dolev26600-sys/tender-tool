@@ -91,9 +91,9 @@ def render_header(title: str, subtitle: str) -> None:
     )
 
 
-def render_footer() -> None:
+def render_footer(tool_label: str = "כלי בדיקת עמידה בתנאי סף") -> None:
     st.markdown(
-        f'<div class="footer-note">{COMPANY_NAME} · כלי בדיקת עמידה בתנאי סף · מופעל בעזרת Claude AI</div>',
+        f'<div class="footer-note">{COMPANY_NAME} · {tool_label} · מופעל בעזרת Claude AI</div>',
         unsafe_allow_html=True,
     )
 
