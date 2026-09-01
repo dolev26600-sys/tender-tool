@@ -41,8 +41,18 @@ TRACK_LABELS = {
 @dataclass
 class Constraints:
     """
-    אילוצים על התמהיל. max_monthly_payment הוא האילוץ שהכי משנה בפועל -
-    הוא מה שהופך את החיפוש מ"מה הכי זול" ל"מה הכי זול שהלקוח יכול לעמוד בו".
+    אילוצים על התמהיל.
+
+    ## פיזור - למה זה אילוץ ולא העדפה
+
+    אופטימיזציה נטו על עלות מתכנסת כמעט תמיד לתמהיל של מסלול אחד או שניים:
+    היא מוצאת את המסלול הזול ומעמיסה עליו הכל. זה נכון מתמטית ושגוי
+    מקצועית - הוא מרכז את כל הסיכון בנקודה אחת, ומשאיר את הלקוח בלי מרחב
+    תמרון כשמשהו זז.
+
+    לכן הפיזור אינו "בונוס" בניקוד אלא **תנאי סף**: מספר מזערי של מסלולים,
+    תקרה לכל מסלול בודד, ותקרה נפרדת לפריים. אלה חוסמים חלוקות שהמתמטיקה
+    אוהבת אבל יועץ לא היה מגיש.
     """
     loan_amount: float
     term_months: int
@@ -50,6 +60,23 @@ class Constraints:
     max_variable_share: float = 2 / 3
     max_monthly_payment: Optional[float] = None
     max_cpi_linked_share: Optional[float] = None
+
+    # --- אילוצי פיזור ---
+    min_tracks: int = 3
+    """מספר מזערי של מסלולים בתמהיל. שניים מרכזים סיכון."""
+
+    max_track_share: float = 0.5
+    """תקרה לכל מסלול בודד - חוסמת חלוקות שמעמיסות הכל על מסלול אחד."""
+
+    max_prime_share: float = 1 / 3
+    """תקרה נפרדת לפריים: ריבית שמתעדכנת מיידית עם כל שינוי בריבית בנק ישראל."""
+
+    min_track_share: float = 0.15
+    """
+    רצפה למסלול שנכלל בתמהיל. בלעדיה האופטימיזציה "מקיימת" את דרישת
+    שלושת המסלולים בכך שהיא שמה 5% במסלול היקר - מסלול שהוא בפועל טעות
+    עיגול, מוסיף סעיף לתיק ולא מוסיף פיזור אמיתי.
+    """
 
 
 @dataclass
@@ -69,6 +96,27 @@ class Candidate:
     def exposure(self) -> float:
         """כמה ההחזר החודשי קופץ בתרחיש הגרוע. מדד הסיכון של התמהיל."""
         return self.worst_monthly - self.base_monthly
+
+    @property
+    def n_tracks(self) -> int:
+        return sum(1 for v in self.allocation.values() if v > 0)
+
+    @property
+    def imbalance(self) -> float:
+        """
+        כמה התמהיל רחוק מחלוקה שווה בין המסלולים הזמינים. 0 = שליש-שליש-שליש
+        (או חלוקה שווה בין כמה מסלולים שיש). ככל שגבוה יותר - מרוכז יותר.
+
+        זה המדד שמתרגם את "לרוב שליש-שליש-שליש" למספר שאפשר למזער.
+        """
+        n = len(self.allocation)
+        if n == 0:
+            return 0.0
+        total = sum(self.allocation.values())
+        if total <= 0:
+            return 0.0
+        target = 1 / n
+        return sum((v / total - target) ** 2 for v in self.allocation.values())
 
     def to_tracks(self, rates: dict[str, float], term_months: int) -> list[dict]:
         """ממיר את החלוקה לרשימת מסלולים בפורמט שכל שאר הכלים מבינים."""
@@ -301,6 +349,18 @@ def _search(
             continue
         if variable_share > constraints.max_variable_share + 1e-9:
             continue
+
+        # --- אילוצי פיזור: חוסמים חלוקות שהמתמטיקה אוהבת ויועץ לא יגיש ---
+        used = [v for v in allocation.values() if v > 0]
+        if len(used) < constraints.min_tracks:
+            continue
+        if max(used) / constraints.loan_amount > constraints.max_track_share + 1e-9:
+            continue
+        if min(used) / constraints.loan_amount < constraints.min_track_share - 1e-9:
+            continue
+        prime_share = allocation.get("variable_prime", 0.0) / constraints.loan_amount
+        if prime_share > constraints.max_prime_share + 1e-9:
+            continue
         if constraints.max_cpi_linked_share is not None and cpi_share > constraints.max_cpi_linked_share + 1e-9:
             continue
 
@@ -335,15 +395,19 @@ def _search(
 
     if not candidates:
         raise ValueError(
-            "לא נמצאה אף חלוקה שעומדת באילוצים. "
-            "כנראה תקרת ההחזר החודשי נמוכה מדי לסכום ולתקופה שהוזנו - "
-            "אפשר להאריך תקופה, להקטין סכום, או להעלות את התקרה."
+            "לא נמצאה אף חלוקה שעומדת באילוצים. הסיבות השכיחות: תקרת ההחזר "
+            "נמוכה מדי לסכום ולתקופה, או שאילוצי הפיזור (מינימום "
+            f"{constraints.min_tracks} מסלולים, עד {constraints.max_track_share:.0%} "
+            f"במסלול בודד, לפחות {constraints.min_track_share:.0%} בכל מסלול שנכלל, "
+            f"עד {constraints.max_prime_share:.0%} בפריים) אינם ניתנים "
+            "לקיום עם המסלולים שסומנו."
         )
 
     best = {
         "cheapest_total": min(candidates, key=lambda c: c.total_cost),
         "lowest_monthly": min(candidates, key=lambda c: c.base_monthly_nominal),
         "most_stable": min(candidates, key=lambda c: c.exposure),
+        "most_balanced": min(candidates, key=lambda c: (c.imbalance, c.total_cost)),
     }
     if early_exit_year is not None and market_rates:
         best["cheapest_exit"] = min(candidates, key=lambda c: (c.exit_fee or 0.0))
@@ -379,6 +443,10 @@ def optimize_across_terms(
     max_variable_share: float = 2 / 3,
     max_monthly_payment: Optional[float] = None,
     max_cpi_linked_share: Optional[float] = None,
+    min_tracks: int = 3,
+    max_track_share: float = 0.5,
+    max_prime_share: float = 1 / 3,
+    min_track_share: float = 0.15,
     **optimize_kwargs,
 ) -> dict:
     """
@@ -409,6 +477,10 @@ def optimize_across_terms(
             max_variable_share=max_variable_share,
             max_monthly_payment=max_monthly_payment,
             max_cpi_linked_share=max_cpi_linked_share,
+            min_tracks=min_tracks,
+            max_track_share=max_track_share,
+            max_prime_share=max_prime_share,
+            min_track_share=min_track_share,
         )
         try:
             res = optimize(rates, constraints, **optimize_kwargs)
@@ -446,6 +518,7 @@ def optimize_across_terms(
             "cheapest_total": lambda p: p[1].total_cost,
             "lowest_monthly": lambda p: p[1].base_monthly_nominal,
             "most_stable": lambda p: p[1].exposure,
+            "most_balanced": lambda p: (p[1].imbalance, p[1].total_cost),
             "cheapest_exit": lambda p: (p[1].exit_fee or 0.0),
         }.get(obj, lambda p: p[1].total_cost)
         term_result, cand = min(ranked, key=key)

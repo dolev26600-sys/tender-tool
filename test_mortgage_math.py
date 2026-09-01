@@ -390,11 +390,13 @@ _OPT_RATES = {
     "fixed_unlinked": 4.6,
     "fixed_linked_cpi": 3.4,
     "variable_prime": 5.4,
+    "variable_unlinked": 4.9,
 }
 _OPT_MARKET = {
     "fixed_unlinked": 4.3,
     "fixed_linked_cpi": 3.2,
     "variable_prime": 5.2,
+    "variable_unlinked": 4.6,
 }
 
 
@@ -442,9 +444,9 @@ def test_min_fixed_share_constraint_is_respected():
 
 def test_max_monthly_payment_filters_candidates():
     """התקרה נבדקת מול ההחזר בפועל, לא מול העלות האפקטיבית."""
-    res = _opt(constraints={"max_monthly_payment": 6500})
+    res = _opt(constraints={"max_monthly_payment": 7200})
     for cand in res["best"].values():
-        assert cand.base_monthly_nominal <= 6500 + 1e-6
+        assert cand.base_monthly_nominal <= 7200 + 1e-6
 
 
 def test_impossible_constraints_fail_with_clear_message():
@@ -472,7 +474,7 @@ def test_linked_appears_only_when_client_cannot_meet_the_cap():
     "אלא אם יש ללקוח בעיות" - המנוע מזהה את המקרה לבד: תקרה נמוכה שאי
     אפשר לעמוד בה בלי צמוד מחזירה linked_required=True.
     """
-    res = _opt(constraints={"max_monthly_payment": 6200})
+    res = _opt(constraints={"max_monthly_payment": 6600})
     assert res["linked_required"] is True
     assert res["best"]["cheapest_total"].cpi_share > 0
     assert "תקרת ההחזר" in res["linked_required_note"]
@@ -481,7 +483,7 @@ def test_linked_appears_only_when_client_cannot_meet_the_cap():
 def test_exclude_policy_never_falls_back_to_linked():
     """במדיניות exclude המנוע נכשל במקום להחזיר צמוד בשקט."""
     try:
-        _opt(constraints={"max_monthly_payment": 6200}, linked_policy="exclude")
+        _opt(constraints={"max_monthly_payment": 6600}, linked_policy="exclude")
     except ValueError:
         pass
     else:
@@ -496,7 +498,7 @@ def test_shorter_term_costs_less_but_pays_more_monthly():
     from mortgage_optimizer import optimize_across_terms
 
     res = optimize_across_terms(
-        {"fixed_unlinked": 4.6, "variable_prime": 5.4},
+        {"fixed_unlinked": 4.6, "variable_prime": 5.4, "variable_unlinked": 4.9},
         1_200_000, term_years_options=[20, 30], step_pct=10,
     )
     by_term = {r.term_months // 12: r for r in res["per_term"] if r.feasible}
@@ -513,7 +515,7 @@ def test_payment_cap_determines_shortest_feasible_term():
     """
     from mortgage_optimizer import optimize_across_terms
 
-    rates = {"fixed_unlinked": 4.6, "variable_prime": 5.4}
+    rates = {"fixed_unlinked": 4.6, "variable_prime": 5.4, "variable_unlinked": 4.9}
     generous = optimize_across_terms(rates, 1_200_000, max_monthly_payment=9000, step_pct=10)
     tight = optimize_across_terms(rates, 1_200_000, max_monthly_payment=7000, step_pct=10)
 
@@ -525,7 +527,7 @@ def test_infeasible_terms_are_reported_not_hidden():
     from mortgage_optimizer import optimize_across_terms
 
     res = optimize_across_terms(
-        {"fixed_unlinked": 4.6, "variable_prime": 5.4},
+        {"fixed_unlinked": 4.6, "variable_prime": 5.4, "variable_unlinked": 4.9},
         1_200_000, max_monthly_payment=7000, step_pct=10,
     )
     assert res["n_terms_checked"] > res["n_terms_feasible"]
@@ -537,13 +539,100 @@ def test_all_terms_infeasible_raises_clearly():
 
     try:
         optimize_across_terms(
-            {"fixed_unlinked": 4.6, "variable_prime": 5.4},
+            {"fixed_unlinked": 4.6, "variable_prime": 5.4, "variable_unlinked": 4.9},
             1_200_000, max_monthly_payment=800, step_pct=10,
         )
     except ValueError as e:
         assert "אף תקופה" in str(e)
     else:
         raise AssertionError("היה צריך להיכשל כשאף תקופה אינה ישימה")
+
+
+def test_diversification_blocks_single_track_answers():
+    """
+    רגרסיה על התנהגות שהמנוע הפגין בפועל: בלי אילוצי פיזור הוא החזיר
+    100% במסלול אחד כתשובה "אופטימלית" - נכון מתמטית, ולא משהו שיועץ
+    מגיש, כי הוא מרכז את כל הסיכון בנקודה אחת.
+    """
+    res = _opt()
+    for cand in res["best"].values():
+        assert cand.n_tracks >= 3
+
+
+def test_no_single_track_exceeds_its_cap():
+    res = _opt()
+    for cand in res["best"].values():
+        biggest = max(v for v in cand.allocation.values() if v > 0)
+        assert biggest / 1_200_000 <= 0.5 + 1e-6
+
+
+def test_prime_share_is_capped_separately():
+    """פריים מתעדכן מיידית עם ריבית בנק ישראל, ולכן יש לו תקרה נפרדת."""
+    res = _opt()
+    for cand in res["best"].values():
+        assert cand.allocation.get("variable_prime", 0) / 1_200_000 <= 1 / 3 + 1e-6
+
+
+def test_included_tracks_are_meaningful_not_rounding_errors():
+    """
+    רגרסיה: עם דרישת שלושה מסלולים בלבד, המנוע "קיים" אותה בכך ששם 5%
+    במסלול היקר. מסלול כזה מוסיף סעיף לתיק ולא מוסיף פיזור.
+    """
+    res = _opt()
+    for cand in res["best"].values():
+        smallest = min(v for v in cand.allocation.values() if v > 0)
+        assert smallest / 1_200_000 >= 0.15 - 1e-6
+
+
+def test_balanced_objective_lands_near_equal_thirds():
+    """
+    "לרוב שליש-שליש-שליש" - המטרה המאוזנת צריכה להחזיר חלוקה קרובה לשווה,
+    ולא להיגרר אחרי הריבית הזולה ביותר.
+    """
+    res = _opt()
+    cand = res["best"]["most_balanced"]
+    shares = sorted(v / 1_200_000 for v in cand.allocation.values() if v > 0)
+    assert shares[-1] - shares[0] <= 0.12, f"חלוקה לא מאוזנת: {shares}"
+
+
+def test_balanced_costs_more_than_pure_optimum_but_not_much():
+    """
+    התמהיל המאוזן אינו הזול ביותר - אחרת לא היה טעם באילוץ. אבל המחיר
+    שלו צריך להיות קטן, אחרת מדיניות הבית יקרה מדי.
+    """
+    res = _opt()
+    balanced = res["best"]["most_balanced"].total_cost
+    cheapest = res["best"]["cheapest_total"].total_cost
+    assert balanced >= cheapest
+    assert (balanced - cheapest) / cheapest < 0.05
+
+
+def test_impossible_diversification_names_the_blocker():
+    """כששני מסלולים בלבד סומנו, דרישת שלושה אינה ניתנת לקיום - וההודעה אומרת זאת."""
+    c = Constraints(loan_amount=1_200_000, term_months=300)
+    try:
+        optimize({"fixed_unlinked": 4.6, "variable_prime": 5.4}, c, step_pct=10)
+    except ValueError as e:
+        assert "פיזור" in str(e)
+    else:
+        raise AssertionError("היה צריך להיכשל על אילוצי פיזור")
+
+
+def test_diversification_can_force_linked_tracks_in():
+    """
+    שני כללי הבית יכולים להתנגש, וזה מתועד כאן במפורש: אם זמינים רק שני
+    מסלולים לא-צמודים, דרישת שלושת המסלולים לא ניתנת לקיום בלעדיהם -
+    והמנוע נאלץ להכניס מסלול צמוד ומסמן linked_required.
+
+    זה לא באג אלא אינפורמציה: היא אומרת ליועץ שכדי להימנע מצמוד הוא צריך
+    לפתוח עוד מסלול לא-צמוד, לא להוריד את דרישת הפיזור.
+    """
+    from mortgage_optimizer import Constraints, optimize
+
+    only_two_unlinked = {"fixed_unlinked": 4.6, "variable_prime": 5.4, "fixed_linked_cpi": 3.4}
+    res = optimize(only_two_unlinked, Constraints(1_200_000, 300), step_pct=10)
+    assert res["linked_required"] is True
+    assert res["best"]["cheapest_total"].cpi_share > 0
 
 
 def test_most_stable_has_no_more_exposure_than_cheapest():
@@ -567,19 +656,35 @@ def test_frontier_collapses_when_one_track_dominates():
     לנקודה אחת. זו תשובה נכונה, לא תקלה: המנוע לא אמור להמציא פשרה
     כשאין מה לפשר עליו.
     """
-    res = _opt()  # קבועה לא צמודה 4.6% מנצחת גם צמודה (3.4+2) וגם פריים 5.4
+    res = optimize(
+        {"fixed_unlinked": 4.6, "variable_prime": 5.4, "variable_unlinked": 4.9},
+        Constraints(loan_amount=1_200_000, term_months=300),
+        step_pct=10,
+    )
     assert len(res["frontier"]) == 1
-    assert res["frontier"][0].exposure == 0
+    # החשיפה כבר אינה אפס: אילוצי הפיזור מחייבים מסלול משתנה בתמהיל, ולכן
+    # "היציב ביותר" הוא היציב שאפשר - לא תמהיל חסין לחלוטין.
+    assert res["frontier"][0].exposure > 0
 
 
-def test_frontier_expands_when_a_real_tradeoff_exists():
-    """כשמסלול משתנה באמת זול יותר, נוצרת דילמה אמיתית והחזית נפרשת."""
-    cheap_prime = {**_OPT_RATES, "variable_prime": 3.9}
+def test_more_tracks_give_the_optimizer_room_to_work():
+    """
+    ממצא מדיד: אילוצי הפיזור מצמצמים את מרחב הבחירה חזק מאוד. עם שלושה
+    מסלולים בלבד נותרות בודדות חלוקות וחזית של נקודה אחת - כלומר הכללים
+    קובעים את התשובה ולא נשארת אופטימיזציה. פתיחת מסלולים נוספים היא מה
+    שמחזיר לאופטימיזר מרחב עבודה.
+    """
     c = Constraints(loan_amount=1_200_000, term_months=300)
-    res = optimize(cheap_prime, c, step_pct=10, expected_cpi_pct=2.0)
-    assert len(res["frontier"]) >= 2
-    # הקצה הזול חשוף יותר מהקצה היציב - זו בדיוק המשמעות של חזית
-    assert res["frontier"][0].exposure > res["frontier"][-1].exposure
+    three = optimize(
+        {"fixed_unlinked": 4.6, "variable_prime": 5.4, "variable_unlinked": 4.9},
+        c, step_pct=5,
+    )
+    five = optimize(_OPT_RATES | {"variable_linked_cpi": 3.6}, c, step_pct=5, linked_policy="allow")
+
+    assert five["n_candidates_evaluated"] > 10 * three["n_candidates_evaluated"]
+    assert len(five["frontier"]) > len(three["frontier"])
+    # בחזית אמיתית הקצה הזול חשוף יותר מהקצה היציב
+    assert five["frontier"][0].exposure > five["frontier"][-1].exposure
 
 
 def test_cheapest_exit_beats_others_on_exit_cost():
