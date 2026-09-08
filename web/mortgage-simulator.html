@@ -1,7 +1,9 @@
 <title>סימולטור מחזור משכנתא</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@500;700&family=Heebo:wght@400;500;700&display=swap">
+<!-- הגיליון נטען כלא-חוסם (media=print ואז מוחלף ב-all): גופן איטי או חסום
+     לא ישאיר את הדף ריק. עד שהוא מגיע, הטקסט מוצג במחסנית הגיבוי. -->
+<link rel="stylesheet" data-font media="print" href="https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@500;700&family=Heebo:wght@400;500;700&display=swap">
 <style>
 :root{
   --paper:#f5f7f8;
@@ -243,6 +245,47 @@ details[open] summary{margin-bottom:10px;}
 .rule.blocking{background:var(--bad-soft);color:var(--bad);}
 .rule.warning{background:var(--warn-soft);color:var(--warn);}
 .rule.ok{background:var(--good-soft);color:var(--good);}
+/* ---------- mode toggle ---------- */
+.modebar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:5px;overflow:hidden;background:var(--surface);}
+.seg-btn{
+  font-family:var(--sans);font-size:.82rem;font-weight:500;cursor:pointer;
+  padding:6px 14px;border:none;background:none;color:var(--muted);
+}
+.seg-btn.is-on{background:var(--accent);color:#fff;}
+.modehint{font-size:.74rem;color:var(--muted);}
+body:not(.show-advanced) .advanced-only{display:none;}
+.tip{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:15px;height:15px;border-radius:50%;background:var(--surface-2);
+  color:var(--muted);font-size:.66rem;font-weight:700;cursor:help;vertical-align:middle;
+}
+
+/* ---------- plan card ---------- */
+.plan{
+  background:var(--surface);border:1px solid var(--line);border-radius:6px;
+  padding:16px 18px;margin-top:12px;box-shadow:var(--shadow);
+}
+.plan h3{font-family:var(--serif);font-size:1.1rem;margin:0 0 10px;}
+.plan-steps{display:flex;flex-direction:column;gap:8px;margin:0 0 14px;padding:0;list-style:none;}
+.plan-steps li{
+  display:flex;gap:10px;align-items:flex-start;font-size:.9rem;line-height:1.5;
+}
+.plan-steps .num{
+  flex:0 0 auto;width:21px;height:21px;border-radius:50%;background:var(--accent);
+  color:#fff;font-size:.74rem;font-weight:700;display:flex;align-items:center;
+  justify-content:center;margin-top:2px;
+}
+/* עמודה אחת בנייד ושלוש ברוחב גדול - auto-fit היה משאיר תא רביעי ריק */
+.compare{display:grid;grid-template-columns:1fr;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:5px;overflow:hidden;}
+@media (min-width:540px){.compare{grid-template-columns:repeat(3,1fr);}}
+.compare div{background:var(--surface);padding:10px 12px;}
+.compare .k{display:block;font-size:.72rem;color:var(--muted);margin-bottom:2px;}
+.compare .v{font-size:1.1rem;font-weight:700;font-variant-numeric:tabular-nums;}
+.compare .d{font-size:.74rem;font-variant-numeric:tabular-nums;}
+.compare .d.better{color:var(--good);}
+.compare .d.worse{color:var(--bad);}
+
 /* ---------- upload ---------- */
 .dropzone{
   border:2px dashed var(--line);border-radius:6px;background:var(--surface);
@@ -294,6 +337,13 @@ footer p{margin:0 0 8px;}
   <header class="masthead">
     <h1>סימולטור מחזור משכנתא</h1>
     <p class="lede">הזינו את המסלולים במשכנתא הקיימת. הכלי בונה לוח סילוקין מלא לכל מסלול, מחשב את עמלת הפירעון המוקדם על רכיביה, ובודק מה עדיף: מחזור מלא, מחזור של חלק מהמסלולים בלבד, המתנה לתחנת יציאה — או להשאיר הכל כמו שהוא.</p>
+    <div class="modebar">
+      <div class="seg" role="group" aria-label="רמת פירוט">
+        <button type="button" class="seg-btn is-on" id="modeSimple">תשובה בלבד</button>
+        <button type="button" class="seg-btn" id="modeAdvanced">כל הפירוט</button>
+      </div>
+      <span class="modehint" id="modeHint">מציג את השורה התחתונה והחלופות. "כל הפירוט" מוסיף עמלות, תרחישים ובדיקת רגולציה.</span>
+    </div>
     <div class="stamps" id="stamps"></div>
   </header>
 
@@ -333,46 +383,62 @@ footer p{margin:0 0 8px;}
       <button class="btn" id="addTrack">+ הוסף מסלול</button>
       <button class="btn" id="resetTracks">אפס לדוגמה</button>
     </div>
-    <div class="rules-list" id="rules" style="margin-top:14px"></div>
+    <div class="rules-list" id="rulesInline" style="margin-top:14px"></div>
   </section>
 
   <section>
-    <div class="sec-head"><h2>תמונת מצב</h2><p class="hint">המצב הנוכחי, בלי לשנות דבר</p></div>
+    <div class="sec-head"><h2>השורה התחתונה</h2><p class="hint">מה כדאי לעשות עם המשכנתא הזו, ולמה</p></div>
+    <div id="verdict"></div>
+    <div id="planCard"></div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>החלופות שנבדקו</h2>
+      <p class="hint" id="searchScope"></p>
+    </div>
+    <div class="alts" id="alts"></div>
+    <div class="controls" style="margin-top:14px">
+      <div class="field">
+        <label for="payCap">ההחזר החודשי החדש</label>
+        <select id="payCap">
+          <option value="current" selected>שלא יעלה על מה שאני משלם היום</option>
+          <option value="1.15">מוכן לשלם עד 15% יותר</option>
+          <option value="any">לא משנה לי — העיקר לחסוך בסך הכל</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="maxTerm">אני מוכן לפרוס עד (שנים)</label>
+        <input type="number" id="maxTerm" min="10" max="30" step="5" value="30">
+      </div>
+      <div class="field">
+        <label for="discountRate">שיעור היוון להשוואה (%) <span class="tip" title="ריבית שבה מתרגמים תשלום עתידי לערך של היום. ככל שהוא גבוה יותר, תשלומים רחוקים נחשבים פחות.">?</span></label>
+        <input type="number" id="discountRate" min="0" max="12" step="0.5" value="4">
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><h2>ההחזר החודשי לאורך הזמן</h2><p class="hint">המשכנתא הנוכחית, ומה קורה לה אם הריבית והאינפלציה עולות</p></div>
     <div class="tiles" id="snapshot"></div>
     <div class="chartcard" style="margin-top:12px">
       <div id="chart"></div>
       <div class="legend">
-        <span><i class="base"></i>ההחזר החודשי בתרחיש בסיס</span>
-        <span><i class="stress"></i>בתרחיש המשולב (ריבית ואינפלציה עולות יחד)</span>
+        <span><i class="base"></i>אם הריבית והאינפלציה יישארו כמו היום</span>
+        <span><i class="stress"></i>אם שתיהן יעלו יחד</span>
       </div>
     </div>
     <p class="source" id="snapshotSource"></p>
   </section>
 
-  <section>
-    <div class="sec-head"><h2>האם כדאי למחזר</h2><p class="hint">כל תתי-הקבוצות של המסלולים נבדקות, לא רק מחזור מלא</p></div>
-    <div id="verdict"></div>
+  <section class="advanced-only">
+    <div class="sec-head"><h2>מה נבדק מול מה</h2><p class="hint">כל תת-קבוצה של המסלולים נבדקה בנפרד, לא רק מחזור מלא</p></div>
     <div class="tablewrap"><table id="subsetsTable"></table></div>
-    <p class="source">העלות הכוללת = ערך נוכחי של כל התשלומים העתידיים בשיעור ההיוון שנבחר, בתוספת עמלת הפירעון המוקדם על המסלולים שממוחזרים.</p>
+    <p class="source">"העלות הכוללת" = כל התשלומים העתידיים מתורגמים לערך של היום, בתוספת עמלת הפירעון המוקדם על המסלולים שממוחזרים.</p>
     <div id="waitBlock"></div>
   </section>
 
-  <section>
-    <div class="sec-head"><h2>חלופות מחזור</h2><p class="hint">המנוע מייצר את התמהילים ומדרג אותם — לצד כל אחד, מה היא מוותרת עליו</p></div>
-    <div class="controls">
-      <div class="field">
-        <label for="termYears">תקופת ההלוואה החדשה (שנים)</label>
-        <input type="number" id="termYears" min="5" max="30" step="5" value="20">
-      </div>
-      <div class="field">
-        <label for="discountRate">שיעור היוון להשוואה (%)</label>
-        <input type="number" id="discountRate" min="0" max="12" step="0.5" value="4">
-      </div>
-    </div>
-    <div class="alts" id="alts" style="margin-top:12px"></div>
-  </section>
-
-  <section>
+  <section class="advanced-only">
     <div class="sec-head"><h2>תרחישי לחץ</h2><p class="hint">ההחזר המקסימלי בתרחיש המשולב הוא המספר שקובע אם משק בית שורד</p></div>
     <div class="tablewrap"><table id="scenarioTable"></table></div>
     <details>
@@ -386,13 +452,18 @@ footer p{margin:0 0 8px;}
     </details>
   </section>
 
-  <section>
+  <section class="advanced-only">
     <div class="sec-head"><h2>עמלת פירעון מוקדם</h2><p class="hint">מפורקת לרכיבים — לא מספר אחד</p></div>
     <div class="checkline">
       <input type="checkbox" id="noticeGiven">
       <label for="noticeGiven">הודעתי לבנק מראש (מבטל את עמלת אי-ההודעה המוקדמת)</label>
     </div>
     <div class="fees" id="fees" style="margin-top:12px"></div>
+  </section>
+
+  <section class="advanced-only">
+    <div class="sec-head"><h2>בדיקת כללי הרגולציה</h2></div>
+    <div class="rules-list" id="rules"></div>
   </section>
 
   <footer>
@@ -402,7 +473,9 @@ footer p{margin:0 0 8px;}
   </footer>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<!-- defer: pdf.js דרוש רק כשמעלים קובץ, ואסור לו לעכב את המחשבון עצמו.
+     בלי זה, CDN איטי או חסום משאיר את הדף ריק עד שהבקשה נכשלת. -->
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
 /* ENGINE-START — פורט מתוך חבילת mortgage/ בפייתון (המנוע הבדוק). כל שינוי כאן חייב להישאר תואם ל-tests/test_mortgage_*.py */
 const CONFIG = {
@@ -865,43 +938,171 @@ function evaluateAlternative(tracks, scenarios, discountRate){
   return {perScenario};
 }
 
-function shareCombinations(nBuckets, step){
-  const steps = Math.round(1/step), out = [];
-  (function rec(remBuckets, remSteps, acc){
-    if(remBuckets === 1){ out.push(acc.concat([remSteps])); return; }
-    for(let s = 0; s <= remSteps; s++) rec(remBuckets - 1, remSteps - s, acc.concat([s]));
-  })(nBuckets, steps, []);
-  return out.map(c => c.map(x => x * step));
+/* חיפוש התמהילים (סעיף 7.1). האפיון מבקש סריקה בצעדי 5% על פני כל סוגי
+   המסלולים והתקופות האפשריות - מאות עד אלפי תמהילים חוקיים.
+   כדי שזה ירוץ מיידית בדפדפן מנצלים תכונה של לוח הסילוקין: הוא ליניארי
+   ביתרה ההתחלתית (PMT, ריבית, קרן והצמדה - כולם מוכפלים באותו קבוע אם
+   מכפילים את הקרן). לכן מחשבים "סדרת יחידה" אחת לכל צירוף
+   בנק/סוג-מסלול/תקופה/תרחיש על יתרה 1, וכל תמהיל הוא צירוף משוקלל שלה:
+   ערך נוכחי והחזר ראשון יוצאים מדויקים לחלוטין בלי לחשב לוח מחדש.
+   ההחזר המקסימלי הוא היחיד שאינו ליניארי (מקסימום של סכום != סכום
+   מקסימומים), ולכן הוא משמש כאן רק כחסם עליון לסינון - ומחושב במדויק
+   על הרשימה הקצרה בלבד. */
+
+const ALL_KINDS = ["fixedNonLinked","fixedLinked","prime","varNonLinked","varLinked"];
+const TERM_OPTIONS = [10,15,20,25,30];
+const SHARE_UNITS = 20;        // 20 יחידות של 5%
+const SHORTLIST_PER_CRITERION = 25;
+
+function _unitAggregates(bank, kind, termYears, resetMonths, scenarios, discountRate, ltv){
+  const t = buildNewTrack("u", kind, 1, CONFIG, bank, termYears, resetMonths, ltv);
+  if(!t) return null;
+  const out = {rate:t.rate, per:{}};
+  const i = discountRate/100/12;
+  for(const [name, sc] of Object.entries(scenarios)){
+    const rows = generateSchedule(t, sc);
+    const payments = new Float64Array(rows.length);
+    let pv = 0, max = 0, total = 0;
+    for(let k = 0; k < rows.length; k++){
+      const pay = rows[k].payment;
+      payments[k] = pay;
+      total += pay;
+      pv += pay / Math.pow(1+i, k+1);
+      if(pay > max) max = pay;
+    }
+    out.per[name] = {pv, total, first: rows.length ? rows[0].payment : 0, max, payments};
+  }
+  return out;
 }
 
-const GRID_KINDS = ["fixedNonLinked","prime","varNonLinked"];
+/* המדדים של תמהיל מחושבים כצירוף משוקלל של סדרות היחידה - זהה בדיוק
+   לחישוב לוח מלא לכל מסלול (הלוח ליניארי ביתרה), רק בלי לבנות אותו שוב. */
+function metricsFromUnits(units, w, amount, scenarios){
+  const perScenario = {};
+  for(const name of Object.keys(scenarios)){
+    let months = 0;
+    for(let k = 0; k < 5; k++)
+      if(w[k]) months = Math.max(months, units[k].per[name].payments.length);
+    const combined = new Float64Array(months);
+    let pv = 0, total = 0;
+    for(let k = 0; k < 5; k++){
+      if(!w[k]) continue;
+      const share = w[k] / SHARE_UNITS, u = units[k].per[name];
+      pv += share * u.pv;
+      total += share * u.total;
+      for(let m = 0; m < u.payments.length; m++) combined[m] += share * u.payments[m];
+    }
+    let max = 0;
+    for(let m = 0; m < months; m++) if(combined[m] > max) max = combined[m];
+    perScenario[name] = {
+      totalPayments: total * amount, firstPayment: (combined[0] || 0) * amount,
+      maxPayment: max * amount, pv: pv * amount, months
+    };
+  }
+  return {perScenario};
+}
 
-function generateAlternatives(amount, termYears, config, rulesCfg, scenarios, discountRate, opts){
+function searchBestMixes(amount, config, rulesCfg, scenarios, discountRate, opts){
   opts = opts || {};
-  const step = opts.shareStep || 0.25;
   const resetMonths = opts.varResetMonths || 60;
-  const results = [];
+  const stressKey = scenarios.combined ? "combined" : "base";
+  const minFixed = rulesCfg.minFixedShare !== undefined ? rulesCfg.minFixedShare : 0;
+  const maxVar = rulesCfg.maxVariableShare !== undefined ? rulesCfg.maxVariableShare : 1;
+  const maxPrime = rulesCfg.maxPrimeShare !== undefined ? rulesCfg.maxPrimeShare : 1;
+
+  const payCap = opts.payCap && isFinite(opts.payCap) ? opts.payCap : Infinity;
+  const byPv = [], byFirst = [], byMaxUb = [];
+  // שמירת ה-N הטובים בלי מיון בכל הכנסה: מחזיקים את הגרוע ביותר ומחליפים אותו.
+  const keep = (list, entry, score) => {
+    if(list.length < SHORTLIST_PER_CRITERION){
+      list.push({entry, score});
+      if(list.length === SHORTLIST_PER_CRITERION)
+        list.worstIdx = list.reduce((wi,x,i) => x.score > list[wi].score ? i : wi, 0);
+      return;
+    }
+    if(score >= list[list.worstIdx].score) return;
+    list[list.worstIdx] = {entry, score};
+    list.worstIdx = list.reduce((wi,x,i) => x.score > list[wi].score ? i : wi, 0);
+  };
+
+  let scanned = 0, legal = 0, cappedOut = 0;
   for(const bank of config.rates.banks){
-    for(const shares of shareCombinations(GRID_KINDS.length, step)){
-      const tracks = [];
-      let ok = true;
-      GRID_KINDS.forEach((kind, idx) => {
-        if(!ok || shares[idx] <= 0) return;
-        const t = buildNewTrack(`${kind}_${idx}`, kind, amount * shares[idx], config, bank,
-                                termYears, resetMonths, opts.ltv);
-        if(!t){ ok = false; return; }
-        tracks.push(t);
-      });
-      if(!ok || !tracks.length) continue;
-      const violations = evaluateMix(tracks, rulesCfg, {termYears, ltv:opts.ltv, propertyType:opts.propertyType});
-      if(hasBlocking(violations)) continue;
-      const metrics = evaluateAlternative(tracks, scenarios, discountRate);
-      const sharesObj = {};
-      GRID_KINDS.forEach((k, i) => { sharesObj[k] = shares[i]; });
-      results.push({bankId:bank.id, bankName:bank.name, shares:sharesObj, tracks, violations, metrics});
+    for(const termYears of TERM_OPTIONS){
+      if(rulesCfg.maxTermYears !== undefined && termYears > rulesCfg.maxTermYears) continue;
+      const units = ALL_KINDS.map(k => _unitAggregates(bank, k, termYears, resetMonths,
+                                                        scenarios, discountRate, opts.ltv));
+      const avail = units.map(u => !!u);
+      if(!avail.some(Boolean)) continue;
+
+      for(let a = 0; a <= SHARE_UNITS; a++){                       // fixedNonLinked
+        if(!avail[0] && a > 0) break;
+        for(let b = 0; a + b <= SHARE_UNITS; b++){                 // fixedLinked
+          if(!avail[1] && b > 0) break;
+          const fixedShare = (a + b) / SHARE_UNITS;
+          if(fixedShare < minFixed - 1e-9) continue;
+          for(let c = 0; a + b + c <= SHARE_UNITS; c++){           // prime
+            if(!avail[2] && c > 0) break;
+            if(c / SHARE_UNITS > maxPrime + 1e-9) break;
+            for(let d = 0; a + b + c + d <= SHARE_UNITS; d++){     // varNonLinked
+              if(!avail[3] && d > 0) break;
+              const e = SHARE_UNITS - a - b - c - d;               // varLinked
+              if(!avail[4] && e > 0) continue;
+              scanned++;
+              if((c + d + e) / SHARE_UNITS > maxVar + 1e-9) continue;
+              legal++;
+
+              const w = [a, b, c, d, e];
+              let pv = 0, first = 0, maxUb = 0;
+              for(let k = 0; k < 5; k++){
+                if(!w[k]) continue;
+                const share = w[k] / SHARE_UNITS, u = units[k];
+                pv    += share * u.per.base.pv;
+                first += share * u.per.base.first;
+                maxUb += share * u.per[stressKey].max;
+              }
+              // לא ממליצים על החזר חודשי שהלווה לא יכול לעמוד בו:
+              // תמהיל שחורג מהתקרה נספר, אבל לא נכנס לדירוג.
+              if(first * amount > payCap + 1){ cappedOut++; continue; }
+
+              const entry = {bank, termYears, w, units};
+              keep(byPv, entry, pv * amount);
+              keep(byFirst, entry, first * amount);
+              keep(byMaxUb, entry, maxUb * amount);
+            }
+          }
+        }
+      }
     }
   }
-  return results;
+
+  // הערכה מדויקת (לוח מלא בכל התרחישים) רק על הרשימה הקצרה
+  const seen = new Set(), finalists = [];
+  for(const {entry} of [...byPv, ...byFirst, ...byMaxUb]){
+    const sig = entry.bank.id + "|" + entry.termYears + "|" + entry.w.join(",");
+    if(seen.has(sig)) continue;
+    seen.add(sig);
+    const tracks = [];
+    let ok = true;
+    entry.w.forEach((units_, k) => {
+      if(!ok || !units_) return;
+      const t = buildNewTrack(`${ALL_KINDS[k]}_${k}`, ALL_KINDS[k], amount * units_ / SHARE_UNITS,
+                              CONFIG, entry.bank, entry.termYears, resetMonths, opts.ltv);
+      if(!t){ ok = false; return; }
+      tracks.push(t);
+    });
+    if(!ok || !tracks.length) continue;
+    const violations = evaluateMix(tracks, rulesCfg,
+      {termYears:entry.termYears, ltv:opts.ltv, propertyType:opts.propertyType});
+    if(hasBlocking(violations)) continue;
+    const shares = {};
+    ALL_KINDS.forEach((k, i) => { shares[k] = entry.w[i] / SHARE_UNITS; });
+    finalists.push({
+      bankId:entry.bank.id, bankName:entry.bank.name, termYears:entry.termYears,
+      shares, tracks, violations,
+      metrics: metricsFromUnits(entry.units, entry.w, amount, scenarios)
+    });
+  }
+  return {alternatives:finalists, scanned, legal, cappedOut};
 }
 
 function normFn(values){
@@ -1019,6 +1220,9 @@ function daysSince(dateStr){
 /* ENGINE-END */
 
 /* ================= UI ================= */
+// הפעלת גיליון הגופנים אחרי שהדף כבר צויר (ראה ההערה ליד תגית ה-link)
+document.querySelectorAll('link[data-font]').forEach(l => { l.media = "all"; });
+
 const KIND_LABELS = {
   fixedNonLinked:"קבועה לא צמודה (קל\"צ)",
   fixedLinked:"קבועה צמודה",
@@ -1165,10 +1369,12 @@ function recompute(){
   const rateSteps = el("rateSteps").value.split(",")
     .map(s => parseFloat(s.trim())).filter(v => isFinite(v));
   const scenarios = buildStandardScenarios(baseInfl, highInfl, rateSteps.length ? rateSteps : [1,2,3], rampMonths);
-  const termYears = Math.max(5, Math.min(30, Math.round(readNum("termYears", 20) / 5) * 5));
+  const maxTerm = Math.max(10, Math.min(30, Math.round(readNum("maxTerm", 30) / 5) * 5));
   const discountRate = readNum("discountRate", 4);
   const noticeGiven = el("noticeGiven").checked;
-  const rulesCfg = CONFIG.rules.newLoan;
+  const rulesCfg = Object.assign({}, CONFIG.rules.newLoan, {
+    maxTermYears: Math.min(CONFIG.rules.newLoan.maxTermYears, maxTerm)
+  });
 
   /* --- snapshot --- */
   const rowsByTrack = {};
@@ -1195,9 +1401,11 @@ function recompute(){
 
   /* --- rules --- */
   const violations = evaluateMix(live, rulesCfg);
-  el("rules").innerHTML = violations.length
+  const rulesHtml = violations.length
     ? violations.map(v => `<div class="rule ${v.severity}">${v.severity === "blocking" ? "חורג" : "לתשומת לב"}: ${v.message}</div>`).join("")
     : `<div class="rule ok">התמהיל הנוכחי עומד בכללי הרגולציה שהוגדרו במערכת.</div>`;
+  el("rules").innerHTML = rulesHtml;
+  el("rulesInline").innerHTML = violations.length ? rulesHtml : "";
 
   /* --- scenarios --- */
   const scenarioRows = ["base","rate_up","inflation_up","combined"].map(key => {
@@ -1238,17 +1446,56 @@ function recompute(){
       <span>${p.hasMissingData ? "—" : money(p.total)}</span></div></div>`;
   }).join("");
 
-  /* --- refinance subsets --- */
-  const banksWithTerm = CONFIG.rates.banks
-    .map(b => ({bank:b, rate:getBankRate(b, "fixedNonLinked", termYears)}))
-    .filter(x => x.rate !== null);
-  const bestBank = banksWithTerm.reduce((a,b) => b.rate < a.rate ? b : a, banksWithTerm[0]);
+  /* --- חיפוש התמהילים: כל סוגי המסלולים, צעדי 5%, כל התקופות --- */
+  const capChoice = el("payCap").value;
+  const currentPayment = combined[0].payment;
+  const payCap = capChoice === "any" ? Infinity
+    : currentPayment * (capChoice === "current" ? 1 : parseFloat(capChoice));
 
+  let search = searchBestMixes(totalBalance, CONFIG, rulesCfg, scenarios, discountRate, {payCap});
+  let capRelaxed = false;
+  if(!search.alternatives.length && payCap !== Infinity){
+    // אף תמהיל לא נכנס בתקרת ההחזר - מציגים בכל זאת את הזולים ביותר ואומרים זאת
+    search = searchBestMixes(totalBalance, CONFIG, rulesCfg, scenarios, discountRate, {});
+    capRelaxed = true;
+  }
+  const alts = search.alternatives;
+  const ranked = rankAlternatives(alts);
+  el("searchScope").innerHTML =
+    `נסרקו ${shekel.format(search.legal)} תמהילים חוקיים על פני ${CONFIG.rates.banks.length} בנקים, ` +
+    `5 סוגי מסלול ותקופות של 10 עד ${maxTerm} שנים.` +
+    (capRelaxed
+      ? ` <b>אף אחד מהם לא נכנס בהחזר החודשי שביקשתם</b> — אלה הזולים ביותר, אבל ההחזר בהם גבוה מהיום.`
+      : (search.cappedOut ? ` ${shekel.format(search.cappedOut)} מהם נפסלו כי ההחזר החודשי בהם גבוה מהתקרה שביקשתם.` : ""));
+
+  /* התמהיל המנצח משמש גם כמחליף בבדיקת המחזור החלקי - במקום להניח
+     100% קל"צ כמו בגרסה הקודמת. */
+  const shapeSource = (ranked.balanced && ranked.balanced.alt) || (alts.length ? alts[0] : null);
+
+  // הריבית שאפשר להשיג היום במחזור - משמשת בהשוואת "להמתין לתחנה מול למחזר עכשיו"
+  let refiRateNow = 5.5;
+  if(shapeSource){
+    const fixedLeg = shapeSource.tracks.find(t => t.kind === "fixedNonLinked");
+    refiRateNow = fixedLeg ? fixedLeg.rate
+      : shapeSource.tracks.reduce((s,t) => s + t.rate * t.balance, 0) /
+        Math.max(1, shapeSource.tracks.reduce((s,t) => s + t.balance, 0));
+  }
   const replacementBuilder = (amount, avgMonths) => {
-    const yrs = Math.max(5, Math.min(30, Math.round(avgMonths/12/5)*5));
-    const rate = getBankRate(bestBank.bank, "fixedNonLinked", yrs);
-    return [{id:"מסלול חדש", kind:"fixedNonLinked", balance:amount, rate,
-             monthsLeft:avgMonths, originalMonths:avgMonths, schedule:"spitzer", linkedToCpi:false}];
+    if(!shapeSource){
+      return [{id:"מסלול חדש", kind:"fixedNonLinked", balance:amount, rate:5.5,
+               monthsLeft:avgMonths, originalMonths:avgMonths, schedule:"spitzer", linkedToCpi:false}];
+    }
+    const bank = CONFIG.rates.banks.find(b => b.id === shapeSource.bankId);
+    const yrs = Math.max(10, Math.min(shapeSource.termYears, Math.round(avgMonths/12/5)*5 || 10));
+    const out = [];
+    Object.entries(shapeSource.shares).forEach(([kind, share], i) => {
+      if(share <= 0) return;
+      const t = buildNewTrack(`חדש_${i}`, kind, amount * share, CONFIG, bank, yrs, 60, null);
+      if(t) out.push(t);
+    });
+    return out.length ? out : [{id:"מסלול חדש", kind:"fixedNonLinked", balance:amount,
+      rate: getBankRate(bank, "fixedNonLinked", yrs) || 5.5, monthsLeft:avgMonths,
+      originalMonths:avgMonths, schedule:"spitzer", linkedToCpi:false}];
   };
 
   const {comparable} = evaluateRefinanceSubsets(live, replacementBuilder, CONFIG, rulesCfg,
@@ -1257,13 +1504,71 @@ function recompute(){
   const labelFor = r => r.isDoNothing ? "להשאיר הכל כמו שהוא"
     : (r.isFullRefinance ? "מחזור מלא של כל המסלולים" : "מחזור חלקי: " + r.subsetIds.join(" + "));
 
+  const KIND_SHORT_LBL = {fixedNonLinked:"קבועה לא צמודה", fixedLinked:"קבועה צמודה",
+                           prime:"פריים", varNonLinked:"משתנה לא צמודה", varLinked:"משתנה צמודה"};
+
   if(headline.hasData && headline.worthwhile !== null){
-    const best = comparable[0];
+    const best = headline.worthwhile ? headline.bestRefi : headline.doNothing;
     el("verdict").innerHTML = headline.worthwhile
-      ? `<div class="verdict good"><p class="vtitle">כדאי למחזר — חיסכון של כ-${money(headline.savings)} בערך נוכחי</p>
-         <p>החלופה המשתלמת ביותר: <b>${labelFor(best)}</b>, מול ריבית של ${bestBank.rate}% ב${bestBank.bank.name} ל-${termYears} שנים. הסכום כבר כולל את עמלת הפירעון המוקדם.</p></div>`
-      : `<div class="verdict bad"><p class="vtitle">לא כדאי למחזר כרגע — המחזור יעלה כ-${money(Math.abs(headline.savings))} יותר</p>
-         <p>אף חלופת מחזור לא מכסה את עלותה מול הריביות שאתם משלמים היום. הכי משתלם להשאיר את המשכנתא כמו שהיא, ולבדוק שוב כשהריביות בשוק ירדו.</p></div>`;
+      ? `<div class="verdict good"><p class="vtitle">כן, כדאי למחזר — ותחסכו כ-${money(headline.savings)}</p>
+         <p>זה החיסכון נטו, אחרי שכבר הורדנו את עמלת הפירעון המוקדם ואת כל העלויות. למטה כתוב בדיוק מה לעשות.</p></div>`
+      : `<div class="verdict bad"><p class="vtitle">לא, לא כדאי למחזר עכשיו</p>
+         <p>המחזור הכי טוב שמצאנו יעלה לכם כ-${money(Math.abs(headline.savings))} <b>יותר</b> מלהשאיר את המשכנתא כמו שהיא. הריביות שאתם משלמים היום טובות מהמוצע בשוק. שווה לבדוק שוב אם הריבית במשק תרד.</p></div>`;
+
+    /* --- מה לעשות בפועל --- */
+    const planHost = el("planCard");
+    if(!headline.worthwhile){
+      planHost.innerHTML = `<div class="plan"><h3>מה כן אפשר לעשות</h3>
+        <ul class="plan-steps">
+          <li><span class="num">1</span><span>להשאיר את המשכנתא כמו שהיא — זו האפשרות הזולה ביותר כרגע.</span></li>
+          <li><span class="num">2</span><span>אם יש לכם כסף פנוי, פירעון חלקי של המסלול היקר ביותר יחסוך ריבית בלי שום עמלת מחזור.</span></li>
+          <li><span class="num">3</span><span>לחזור ולבדוק כאן כשהריבית במשק יורדת, או כשמתקרבת תחנת יציאה במסלול משתנה.</span></li>
+        </ul></div>`;
+    } else {
+      const refiIds = best.subsetIds;
+      const newTracks = replacementBuilder(
+        live.filter(t => refiIds.includes(t.id)).reduce((s,t) => s + t.balance, 0),
+        Math.round(live.filter(t => refiIds.includes(t.id))
+                       .reduce((s,t) => s + t.monthsLeft, 0) / Math.max(1, refiIds.length)));
+      const keepIds = live.filter(t => !refiIds.includes(t.id)).map(t => t.id);
+      const bankName = (CONFIG.rates.banks.find(b => b.id === (shapeSource && shapeSource.bankId)) || {}).name || "";
+      const mixText = newTracks.map(t =>
+        `${Math.round(t.balance / newTracks.reduce((s,x) => s + x.balance, 0) * 100)}% ${KIND_SHORT_LBL[t.kind]} בריבית ${t.rate.toFixed(2)}%`).join(" · ");
+      const newYears = Math.round((newTracks[0] ? newTracks[0].monthsLeft : 0) / 12);
+
+      const curFirst = combined[0].payment;
+      const newFirst = best.metrics.perScenario.base.firstPayment;
+      const curTotal = combined.reduce((s,r) => s + r.payment, 0);
+      const newTotal = best.metrics.perScenario.base.totalPayments;
+      const curWorst = Math.max(...combinedStress.map(r => r.payment));
+      const newWorst = best.metrics.perScenario.combined.maxPayment;
+      const delta = (nv, cv, lowerIsBetter) => {
+        const d = nv - cv;
+        const cls = (lowerIsBetter ? d < 0 : d > 0) ? "better" : "worse";
+        return `<span class="d ${cls}">${d > 0 ? "+" : "−"}${money(Math.abs(d))}</span>`;
+      };
+
+      planHost.innerHTML = `<div class="plan">
+        <h3>מה לעשות בפועל</h3>
+        <ul class="plan-steps">
+          <li><span class="num">1</span><span>${refiIds.length === live.length
+              ? `למחזר את <b>כל המשכנתא</b> (${refiIds.length} המסלולים).`
+              : `למחזר רק את <b>${refiIds.join(" ו")}</b>${keepIds.length ? `, ולהשאיר את ${keepIds.join(" ו")} בדיוק כמו שהם — הריבית שם כבר טובה ולא שווה לשלם עליה עמלה` : ""}.`}</span></li>
+          <li><span class="num">2</span><span>לקחת את ההלוואה החדשה ב<b>${bankName}</b> ל-${newYears} שנים, בתמהיל: ${mixText}.</span></li>
+          <li><span class="num">3</span><span>עמלת הפירעון המוקדם על מה שממוחזר: <b>${money(best.fee.total)}</b>. ${best.fee.total > 0 ? "היא כבר נלקחה בחשבון בחיסכון שלמעלה." : "אין עמלה על המסלולים האלה."}</span></li>
+          <li><span class="num">4</span><span>לפני החתימה — להודיע לבנק מראש על הכוונה לפרוע, כדי לא לשלם עמלת אי-הודעה מיותרת.</span></li>
+        </ul>
+        <div class="compare">
+          <div><span class="k">החזר חודשי</span><span class="v">${money(newFirst)}</span>
+               <span class="k">היום ${money(curFirst)}</span>${delta(newFirst, curFirst, true)}</div>
+          <div><span class="k">סך התשלומים עד הסוף</span><span class="v">${money(newTotal)}</span>
+               <span class="k">היום ${money(curTotal)}</span>${delta(newTotal, curTotal, true)}</div>
+          <div><span class="k">ההחזר אם הריבית תעלה</span><span class="v">${money(newWorst)}</span>
+               <span class="k">היום ${money(curWorst)}</span>${delta(newWorst, curWorst, true)}</div>
+        </div>
+        <p class="source">ההשוואה היא מול המשך המשכנתא הקיימת ללא שינוי, באותן הנחות ריבית ואינפלציה.</p>
+      </div>`;
+    }
   }
 
   el("subsetsTable").innerHTML = `
@@ -1282,7 +1587,7 @@ function recompute(){
   el("waitBlock").innerHTML = !waiters.length ? "" :
     `<div class="sec-head" style="margin-top:22px"><h2 style="font-size:1.05rem">המתנה לתחנת יציאה</h2></div>` +
     waiters.map(t => {
-      const w = waitForResetAlternative(t, CONFIG, bestBank.rate, discountRate, scenarios.base);
+      const w = waitForResetAlternative(t, CONFIG, refiRateNow, discountRate, scenarios.base);
       if(!w.comparable) return `<div class="rule warning">${t.id}: ${w.reason}</div>`;
       const win = w.winner === "wait";
       return `<div class="rule ${win ? "ok" : "warning"}">
@@ -1292,10 +1597,10 @@ function recompute(){
     }).join("");
 
   /* --- alternatives --- */
-  const alts = generateAlternatives(totalBalance, termYears, CONFIG, rulesCfg, scenarios, discountRate, {});
-  const ranked = rankAlternatives(alts);
-  const KIND_SHORT = {fixedNonLinked:"קל\"צ", prime:"פריים", varNonLinked:"משתנה"};
-  const barClass = {fixedNonLinked:"k1", prime:"k2", varNonLinked:"k3"};
+  const KIND_SHORT = {fixedNonLinked:"קבועה", fixedLinked:"קבועה צמודה", prime:"פריים",
+                      varNonLinked:"משתנה", varLinked:"משתנה צמודה"};
+  const barClass = {fixedNonLinked:"k1", fixedLinked:"k1", prime:"k2",
+                    varNonLinked:"k3", varLinked:"k3"};
 
   if(!Object.keys(ranked).length){
     el("alts").innerHTML = `<div class="rule blocking">לא נמצאה אף חלופה חוקית מול כללי הרגולציה שהוגדרו.</div>`;
@@ -1331,12 +1636,12 @@ function recompute(){
 
       return `<div class="alt${entry.labels.includes("המאוזן") ? " is-pick" : ""}">
         <h3>${entry.labels.join(" · ")}</h3>
-        <p class="bank">${a.bankName} · ${termYears} שנים</p>
+        <p class="bank">${a.bankName} · ${a.termYears} שנים</p>
         <div class="mix">${mix}</div>
         <div class="alt-nums">
-          <div class="n"><span>החזר חודשי ראשון</span><b>${money(m.base.firstPayment)}</b></div>
-          <div class="n"><span>עלות כוללת (ערך נוכחי)</span><b>${money(m.base.pv)}</b></div>
-          <div class="n"><span>החזר מקס' בתרחיש לחץ</span><b>${money(m.combined.maxPayment)}</b></div>
+          <div class="n"><span>החזר חודשי</span><b>${money(m.base.firstPayment)}</b></div>
+          <div class="n"><span>סך התשלומים</span><b>${money(m.base.totalPayments)}</b></div>
+          <div class="n"><span>אם הריבית תעלה</span><b>${money(m.combined.maxPayment)}</b></div>
         </div>
         <div class="gives-up"><b>מוותרת על:</b> ${givesUp.length ? givesUp.join("; ") : "כלום מהותי — היא הטובה ביותר בכל המדדים שנבדקו"}. ${entry.whys[0]}</div>
       </div>`;
@@ -1361,9 +1666,21 @@ function renderStamps(){
 let debounce;
 function scheduleRecompute(){ clearTimeout(debounce); debounce = setTimeout(recompute, 140); }
 
-["termYears","discountRate","baseInfl","highInfl","rateSteps","rampMonths"]
+["maxTerm","discountRate","baseInfl","highInfl","rateSteps","rampMonths"]
   .forEach(id => el(id).addEventListener("input", scheduleRecompute));
+
+el("modeSimple").addEventListener("click", () => {
+  document.body.classList.remove("show-advanced");
+  el("modeSimple").classList.add("is-on"); el("modeAdvanced").classList.remove("is-on");
+  el("modeHint").textContent = 'מציג את השורה התחתונה והחלופות. "כל הפירוט" מוסיף עמלות, תרחישים ובדיקת רגולציה.';
+});
+el("modeAdvanced").addEventListener("click", () => {
+  document.body.classList.add("show-advanced");
+  el("modeAdvanced").classList.add("is-on"); el("modeSimple").classList.remove("is-on");
+  el("modeHint").textContent = "מציג הכל: פירוק עמלת הפירעון, ארבעת תרחישי הלחץ, השוואת כל תתי-הקבוצות ובדיקת הרגולציה.";
+});
 el("noticeGiven").addEventListener("change", recompute);
+el("payCap").addEventListener("change", recompute);
 
 el("addTrack").addEventListener("click", () => {
   tracks.push({id:`מסלול ${tracks.length + 1}`, kind:"fixedNonLinked", balance:200000, rate:5.0,
