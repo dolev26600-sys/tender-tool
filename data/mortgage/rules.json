@@ -1,0 +1,19 @@
+{
+  "updatedAt": "2026-09-08",
+  "sourceRef": "הוראת ניהול בנקאי תקין 329 (בנק ישראל) - ערכים לדוגמה, יש לאמת מול הנוסח המחייב העדכני לפני שימוש מול לקוחות",
+  "newLoan": {
+    "minFixedShare": 0.3333,
+    "maxVariableShare": 0.6667,
+    "maxPrimeShare": 0.6667,
+    "maxTermYears": 30,
+    "ltvCaps": {
+      "singleHome": 0.75,
+      "upgrader": 0.70,
+      "investment": 0.50
+    },
+    "ptiWarn": 0.35,
+    "ptiMax": 0.40
+  },
+  "refinanceInternal": {},
+  "refinanceExternal": {}
+}

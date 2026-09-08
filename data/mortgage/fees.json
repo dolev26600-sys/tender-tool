@@ -1,0 +1,38 @@
+{
+  "updatedAt": "2026-09-08",
+  "source": "נתוני דוגמה להרצה ראשונית בלבד - יש להחליף בנתונים אמיתיים לפני שימוש מול לקוחות. ראה README.",
+  "operationalFee": 60,
+  "noNoticeFee": {"days": 10},
+  "capitalization": {
+    "discountsByRemainingTerm": [
+      {"remainingYears": "0-1", "discount": 0.30},
+      {"remainingYears": "1-3", "discount": 0.20},
+      {"remainingYears": "3+", "discount": 0.00}
+    ],
+    "exemptions": ["בתחנת יציאה", "פטור סטטוטורי אם רלוונטי"]
+  },
+  "feeApplicability": {
+    "_note": "מיפוי סוג מסלול -> אופן חישוב עמלת ההיוון: full = על כל יתרת התקופה, toNextReset = על התקופה עד תחנת היציאה בלבד (ופטור מלא בתחנה עצמה), none = פטור תמיד. ראה סעיף 4.3/2.2 באפיון.",
+    "fixedNonLinked": "full",
+    "fixedLinked": "full",
+    "prime": "none",
+    "varNonLinked": "toNextReset",
+    "varLinked": "toNextReset",
+    "varMakam": "toNextReset",
+    "eligibility": "full",
+    "bullet": "full",
+    "balloon": "full"
+  },
+  "indexationDiff": {
+    "applies": ["fixedLinked", "varLinked"],
+    "_note": "בכוונה לא הוגדרו lagDays/assumedMonthlyRate בנתוני הדוגמה - זה מדגים את עקרון 'המנוע לא ממציא מספרים': כל עוד השדות האלה חסרים, מנוע העמלות יציג לרכיב הזה 'חסר נתון' ולא יעריך אותו בשקט. יש להשלים את הערכים בפועל (פער הימים בין תאריך הפירעון לפרסום המדד, והנחת המדד החודשית) לפני חישוב עמלות אמיתי למסלול צמוד."
+  },
+  "ancillary": {
+    "fileOpen": 0,
+    "appraisal": 350,
+    "legal": 5000,
+    "registry": 1500,
+    "insuranceUpdate": 300,
+    "advisory": 0
+  }
+}

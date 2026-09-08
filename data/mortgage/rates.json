@@ -1,0 +1,217 @@
+{
+  "updatedAt": "2026-09-08",
+  "source": "נתוני דוגמה להרצה ראשונית בלבד - יש להחליף בנתונים אמיתיים (הצעות בפועל / פרסומי הבנקים) לפני שימוש מול לקוחות. ראה README.",
+  "primeRate": 6.0,
+  "boiAverageRates": {
+    "fixedNonLinked": {
+      "0-2": 4.9,
+      "2-5": 5.1,
+      "5-10": 5.3,
+      "10-15": 5.5,
+      "15-20": 5.6,
+      "20-30": 5.7
+    },
+    "fixedLinked": {
+      "0-2": 2.9,
+      "2-5": 3.1,
+      "5-10": 3.3,
+      "10-15": 3.4,
+      "15-20": 3.5,
+      "20-30": 3.6
+    }
+  },
+  "banks": [
+    {
+      "id": "bank_leumi",
+      "name": "בנק לאומי",
+      "tracks": {
+        "fixedNonLinked": {
+          "byTerm": {
+            "10": {"min": 4.3, "typ": 4.7, "max": 5.2},
+            "15": {"min": 4.6, "typ": 5.0, "max": 5.5},
+            "20": {"min": 4.9, "typ": 5.3, "max": 5.8},
+            "25": {"min": 5.1, "typ": 5.5, "max": 6.0},
+            "30": {"min": 5.3, "typ": 5.7, "max": 6.2}
+          }
+        },
+        "fixedLinked": {
+          "byTerm": {
+            "10": {"min": 2.4, "typ": 2.8, "max": 3.2},
+            "15": {"min": 2.6, "typ": 3.0, "max": 3.4},
+            "20": {"min": 2.8, "typ": 3.2, "max": 3.6},
+            "25": {"min": 3.0, "typ": 3.4, "max": 3.8},
+            "30": {"min": 3.1, "typ": 3.5, "max": 3.9}
+          }
+        },
+        "prime": {"marginFromPrime": {"min": -0.8, "typ": -0.5, "max": -0.2}},
+        "varNonLinked": {
+          "resetOptions": [18, 36, 60],
+          "byReset": {
+            "18": {"min": 3.6, "typ": 4.0, "max": 4.4},
+            "36": {"min": 3.9, "typ": 4.3, "max": 4.7},
+            "60": {"min": 4.1, "typ": 4.5, "max": 4.9}
+          }
+        },
+        "varLinked": {
+          "resetOptions": [18, 36, 60],
+          "byReset": {
+            "18": {"min": 1.8, "typ": 2.2, "max": 2.6},
+            "36": {"min": 2.0, "typ": 2.4, "max": 2.8},
+            "60": {"min": 2.2, "typ": 2.6, "max": 3.0}
+          }
+        }
+      },
+      "ltvSurcharge": [
+        {"upTo": 0.45, "delta": 0.0},
+        {"upTo": 0.60, "delta": 0.10},
+        {"upTo": 0.75, "delta": 0.25}
+      ],
+      "minLoan": 100000,
+      "maxTermYears": 30
+    },
+    {
+      "id": "bank_hapoalim",
+      "name": "בנק הפועלים",
+      "tracks": {
+        "fixedNonLinked": {
+          "byTerm": {
+            "10": {"min": 4.4, "typ": 4.8, "max": 5.3},
+            "15": {"min": 4.7, "typ": 5.1, "max": 5.6},
+            "20": {"min": 5.0, "typ": 5.4, "max": 5.9},
+            "25": {"min": 5.2, "typ": 5.6, "max": 6.1},
+            "30": {"min": 5.4, "typ": 5.8, "max": 6.3}
+          }
+        },
+        "fixedLinked": {
+          "byTerm": {
+            "10": {"min": 2.5, "typ": 2.9, "max": 3.3},
+            "15": {"min": 2.7, "typ": 3.1, "max": 3.5},
+            "20": {"min": 2.9, "typ": 3.3, "max": 3.7},
+            "25": {"min": 3.1, "typ": 3.5, "max": 3.9},
+            "30": {"min": 3.2, "typ": 3.6, "max": 4.0}
+          }
+        },
+        "prime": {"marginFromPrime": {"min": -0.7, "typ": -0.4, "max": -0.1}},
+        "varNonLinked": {
+          "resetOptions": [18, 36, 60],
+          "byReset": {
+            "18": {"min": 3.7, "typ": 4.1, "max": 4.5},
+            "36": {"min": 4.0, "typ": 4.4, "max": 4.8},
+            "60": {"min": 4.2, "typ": 4.6, "max": 5.0}
+          }
+        },
+        "varLinked": {
+          "resetOptions": [18, 36, 60],
+          "byReset": {
+            "18": {"min": 1.9, "typ": 2.3, "max": 2.7},
+            "36": {"min": 2.1, "typ": 2.5, "max": 2.9},
+            "60": {"min": 2.3, "typ": 2.7, "max": 3.1}
+          }
+        }
+      },
+      "ltvSurcharge": [
+        {"upTo": 0.45, "delta": 0.0},
+        {"upTo": 0.60, "delta": 0.12},
+        {"upTo": 0.75, "delta": 0.28}
+      ],
+      "minLoan": 100000,
+      "maxTermYears": 30
+    },
+    {
+      "id": "bank_discount",
+      "name": "בנק דיסקונט",
+      "tracks": {
+        "fixedNonLinked": {
+          "byTerm": {
+            "10": {"min": 4.35, "typ": 4.75, "max": 5.25},
+            "15": {"min": 4.65, "typ": 5.05, "max": 5.55},
+            "20": {"min": 4.95, "typ": 5.35, "max": 5.85},
+            "25": {"min": 5.15, "typ": 5.55, "max": 6.05},
+            "30": {"min": 5.35, "typ": 5.75, "max": 6.25}
+          }
+        },
+        "fixedLinked": {
+          "byTerm": {
+            "10": {"min": 2.35, "typ": 2.75, "max": 3.15},
+            "15": {"min": 2.55, "typ": 2.95, "max": 3.35},
+            "20": {"min": 2.75, "typ": 3.15, "max": 3.55},
+            "25": {"min": 2.95, "typ": 3.35, "max": 3.75},
+            "30": {"min": 3.05, "typ": 3.45, "max": 3.85}
+          }
+        },
+        "prime": {"marginFromPrime": {"min": -0.75, "typ": -0.45, "max": -0.15}},
+        "varNonLinked": {
+          "resetOptions": [18, 36, 60],
+          "byReset": {
+            "18": {"min": 3.65, "typ": 4.05, "max": 4.45},
+            "36": {"min": 3.95, "typ": 4.35, "max": 4.75},
+            "60": {"min": 4.15, "typ": 4.55, "max": 4.95}
+          }
+        },
+        "varLinked": {
+          "resetOptions": [18, 36, 60],
+          "byReset": {
+            "18": {"min": 1.85, "typ": 2.25, "max": 2.65},
+            "36": {"min": 2.05, "typ": 2.45, "max": 2.85},
+            "60": {"min": 2.25, "typ": 2.65, "max": 3.05}
+          }
+        }
+      },
+      "ltvSurcharge": [
+        {"upTo": 0.45, "delta": 0.0},
+        {"upTo": 0.60, "delta": 0.10},
+        {"upTo": 0.75, "delta": 0.22}
+      ],
+      "minLoan": 80000,
+      "maxTermYears": 30
+    },
+    {
+      "id": "bank_mizrahi",
+      "name": "מזרחי טפחות",
+      "tracks": {
+        "fixedNonLinked": {
+          "byTerm": {
+            "10": {"min": 4.25, "typ": 4.65, "max": 5.15},
+            "15": {"min": 4.55, "typ": 4.95, "max": 5.45},
+            "20": {"min": 4.85, "typ": 5.25, "max": 5.75},
+            "25": {"min": 5.05, "typ": 5.45, "max": 5.95},
+            "30": {"min": 5.25, "typ": 5.65, "max": 6.15}
+          }
+        },
+        "fixedLinked": {
+          "byTerm": {
+            "10": {"min": 2.30, "typ": 2.70, "max": 3.10},
+            "15": {"min": 2.50, "typ": 2.90, "max": 3.30},
+            "20": {"min": 2.70, "typ": 3.10, "max": 3.50},
+            "25": {"min": 2.90, "typ": 3.30, "max": 3.70},
+            "30": {"min": 3.00, "typ": 3.40, "max": 3.80}
+          }
+        },
+        "prime": {"marginFromPrime": {"min": -0.85, "typ": -0.55, "max": -0.25}},
+        "varNonLinked": {
+          "resetOptions": [18, 36, 60],
+          "byReset": {
+            "18": {"min": 3.55, "typ": 3.95, "max": 4.35},
+            "36": {"min": 3.85, "typ": 4.25, "max": 4.65},
+            "60": {"min": 4.05, "typ": 4.45, "max": 4.85}
+          }
+        },
+        "varLinked": {
+          "resetOptions": [18, 36, 60],
+          "byReset": {
+            "18": {"min": 1.75, "typ": 2.15, "max": 2.55},
+            "36": {"min": 1.95, "typ": 2.35, "max": 2.75},
+            "60": {"min": 2.15, "typ": 2.55, "max": 2.95}
+          }
+        }
+      },
+      "ltvSurcharge": [
+        {"upTo": 0.45, "delta": 0.0},
+        {"upTo": 0.60, "delta": 0.10},
+        {"upTo": 0.75, "delta": 0.20}
+      ],
+      "minLoan": 100000,
+      "maxTermYears": 30
+    }
+  ]
+}
