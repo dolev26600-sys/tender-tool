@@ -144,6 +144,33 @@ def test_variable_track_reprices_at_reset_under_rate_up_scenario():
     assert rows[-1].closing == pytest.approx(0.0, abs=0.01)
 
 
+def test_prime_track_reprices_monthly_under_rate_up_scenario():
+    """מסלול פריים מתעדכן בפועל כל חודש - אסור שייראה חסין לעליית ריבית
+    בתרחישי הלחץ (סעיף 2.2: תחנת יציאה חודשית בפועל)."""
+    prime = Track(id="p", kind="prime", balance=400_000, rate=7.0,
+                  months_left=220, original_months=240, schedule="spitzer")
+    base_rows = generate_schedule(prime, BASE_SCENARIO)
+    up_rows = generate_schedule(prime, Scenario(name="עליית ריבית", annual_inflation=0.0,
+                                                 anchor_delta_path=[3.0] * 360))
+    # בתרחיש הבסיס הריבית לא זזה
+    assert base_rows[0].rate == pytest.approx(7.0)
+    assert base_rows[-1].rate == pytest.approx(7.0)
+    # בתרחיש עליית הריבית הפריים מתעדכן כבר מהחודש הראשון
+    assert up_rows[0].rate == pytest.approx(10.0)
+    assert up_rows[1].rate == pytest.approx(10.0)
+    assert max(r.payment for r in up_rows) > max(r.payment for r in base_rows)
+
+
+def test_fixed_track_is_immune_to_rate_up_scenario():
+    fixed = Track(id="f", kind="fixedNonLinked", balance=600_000, rate=5.2,
+                  months_left=220, original_months=240, schedule="spitzer")
+    up_rows = generate_schedule(fixed, Scenario(name="עליית ריבית", annual_inflation=0.0,
+                                                 anchor_delta_path=[3.0] * 360))
+    base_rows = generate_schedule(fixed, BASE_SCENARIO)
+    assert up_rows[0].payment == pytest.approx(base_rows[0].payment, abs=1e-9)
+    assert all(r.rate == pytest.approx(5.2) for r in up_rows)
+
+
 def test_present_value_and_summary_consistency():
     track = Track(id="t1", kind="fixedNonLinked", balance=1_000_000, rate=5.0,
                   months_left=240, original_months=240, schedule="spitzer")

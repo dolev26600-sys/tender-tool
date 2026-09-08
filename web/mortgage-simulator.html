@@ -1,0 +1,1319 @@
+<title>סימולטור מחזור משכנתא</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@500;700&family=Heebo:wght@400;500;700&display=swap">
+<style>
+:root{
+  --paper:#f5f7f8;
+  --surface:#ffffff;
+  --surface-2:#eef2f4;
+  --ink:#0f1922;
+  --muted:#5c6b78;
+  --line:#dde4e8;
+  --accent:#12556b;
+  --accent-soft:#e0edf1;
+  --accent-ink:#0d4051;
+  --good:#17795e;
+  --good-soft:#e2f2ec;
+  --warn:#a4640a;
+  --warn-soft:#fbf0dd;
+  --bad:#a3282f;
+  --bad-soft:#fbe6e6;
+  --shadow:0 1px 2px rgba(15,25,34,.06), 0 8px 24px -16px rgba(15,25,34,.28);
+  --serif:'Frank Ruhl Libre', 'Times New Roman', serif;
+  --sans:'Heebo', -apple-system, 'Segoe UI', sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#0e161d;
+    --surface:#17222c;
+    --surface-2:#1e2b36;
+    --ink:#e6eef3;
+    --muted:#96a7b3;
+    --line:#2a3945;
+    --accent:#6fb3c9;
+    --accent-soft:#1b303b;
+    --accent-ink:#a8d3e2;
+    --good:#4fbd95;
+    --good-soft:#16302a;
+    --warn:#d9a04a;
+    --warn-soft:#332715;
+    --bad:#e0757b;
+    --bad-soft:#331a1c;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0e161d;
+  --surface:#17222c;
+  --surface-2:#1e2b36;
+  --ink:#e6eef3;
+  --muted:#96a7b3;
+  --line:#2a3945;
+  --accent:#6fb3c9;
+  --accent-soft:#1b303b;
+  --accent-ink:#a8d3e2;
+  --good:#4fbd95;
+  --good-soft:#16302a;
+  --warn:#d9a04a;
+  --warn-soft:#332715;
+  --bad:#e0757b;
+  --bad-soft:#331a1c;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.7);
+}
+
+body{
+  direction:rtl;
+  background:var(--paper);
+  color:var(--ink);
+  font-family:var(--sans);
+  font-size:16px;
+  line-height:1.6;
+  -webkit-text-size-adjust:100%;
+}
+*{box-sizing:border-box;}
+.wrap{max-width:920px;margin:0 auto;padding:20px 16px 64px;}
+
+/* ---------- header ---------- */
+.masthead{
+  border-bottom:2px solid var(--ink);
+  padding-bottom:14px;margin-bottom:18px;
+}
+.masthead h1{
+  font-family:var(--serif);font-weight:700;
+  font-size:clamp(1.6rem,5.2vw,2.3rem);
+  line-height:1.2;margin:0 0 4px;text-wrap:balance;
+}
+.masthead .lede{color:var(--muted);font-size:.95rem;margin:0;max-width:60ch;}
+.stamps{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px;}
+.stamp{
+  font-size:.72rem;letter-spacing:.04em;font-weight:500;
+  border:1px solid var(--line);border-radius:3px;
+  padding:3px 8px;color:var(--muted);background:var(--surface);
+  font-variant-numeric:tabular-nums;
+}
+.stamp.is-stale{border-color:var(--warn);color:var(--warn);background:var(--warn-soft);}
+
+/* ---------- notice ---------- */
+.notice{
+  background:var(--warn-soft);color:var(--warn);
+  border-right:3px solid var(--warn);
+  padding:10px 12px;font-size:.85rem;line-height:1.5;
+  border-radius:0 4px 4px 0;margin-bottom:24px;
+}
+.notice b{font-weight:700;}
+
+/* ---------- sections ---------- */
+section{margin-bottom:34px;}
+.sec-head{display:flex;align-items:baseline;gap:10px;margin-bottom:12px;flex-wrap:wrap;}
+.sec-head h2{
+  font-family:var(--serif);font-weight:700;font-size:1.25rem;margin:0;
+}
+.sec-head .hint{color:var(--muted);font-size:.82rem;margin:0;}
+
+/* ---------- track cards ---------- */
+.tracks{display:flex;flex-direction:column;gap:10px;}
+.track{
+  background:var(--surface);border:1px solid var(--line);border-radius:6px;
+  padding:12px 14px;box-shadow:var(--shadow);
+}
+.track-top{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
+.track-name{font-weight:700;font-size:.95rem;flex:1;}
+.track-tag{
+  font-size:.7rem;padding:2px 7px;border-radius:3px;
+  background:var(--accent-soft);color:var(--accent-ink);font-weight:500;
+}
+.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;}
+.field{display:flex;flex-direction:column;gap:3px;}
+.field label{font-size:.74rem;color:var(--muted);font-weight:500;}
+.field input,.field select{
+  font-family:var(--sans);font-size:.95rem;
+  padding:7px 9px;border:1px solid var(--line);border-radius:4px;
+  background:var(--surface);color:var(--ink);width:100%;
+  font-variant-numeric:tabular-nums;
+}
+.field input:focus,.field select:focus,button:focus-visible{
+  outline:2px solid var(--accent);outline-offset:1px;
+}
+.btn{
+  font-family:var(--sans);font-size:.88rem;font-weight:500;cursor:pointer;
+  padding:7px 14px;border-radius:4px;border:1px solid var(--line);
+  background:var(--surface);color:var(--ink);
+}
+.btn:hover{border-color:var(--accent);color:var(--accent);}
+.btn-icon{
+  border:none;background:none;color:var(--muted);cursor:pointer;
+  font-size:1.1rem;line-height:1;padding:4px 6px;border-radius:4px;
+}
+.btn-icon:hover{color:var(--bad);background:var(--bad-soft);}
+.row-actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;}
+
+/* ---------- stat tiles ---------- */
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:6px;overflow:hidden;}
+.tile{background:var(--surface);padding:12px 14px;}
+.tile .k{font-size:.74rem;color:var(--muted);font-weight:500;display:block;margin-bottom:2px;}
+.tile .v{font-size:1.32rem;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.01em;}
+.tile .sub{font-size:.72rem;color:var(--muted);font-variant-numeric:tabular-nums;}
+
+/* ---------- verdict ---------- */
+.verdict{
+  border-radius:6px;padding:18px 20px;margin-bottom:14px;
+  border:1px solid var(--line);background:var(--surface);
+}
+.verdict.good{background:var(--good-soft);border-color:var(--good);}
+.verdict.bad{background:var(--bad-soft);border-color:var(--bad);}
+.verdict .vtitle{
+  font-family:var(--serif);font-weight:700;
+  font-size:clamp(1.15rem,4.2vw,1.6rem);line-height:1.3;margin:0 0 6px;text-wrap:balance;
+}
+.verdict.good .vtitle{color:var(--good);}
+.verdict.bad .vtitle{color:var(--bad);}
+.verdict p{margin:0;font-size:.9rem;color:var(--ink);}
+
+/* ---------- alternatives ---------- */
+.alts{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:10px;}
+.alt{
+  background:var(--surface);border:1px solid var(--line);border-radius:6px;
+  padding:14px;display:flex;flex-direction:column;gap:8px;
+}
+.alt.is-pick{border-color:var(--accent);border-width:2px;padding:13px;}
+.alt h3{font-family:var(--serif);font-size:1.05rem;font-weight:700;margin:0;}
+.alt .bank{font-size:.76rem;color:var(--muted);margin:-6px 0 0;}
+.mix{display:flex;flex-direction:column;gap:4px;margin:2px 0;}
+.mix-row{display:flex;align-items:center;gap:6px;font-size:.78rem;}
+.mix-bar{height:6px;border-radius:2px;background:var(--accent);flex:0 0 auto;min-width:3px;}
+.mix-bar.k1{background:var(--accent);}
+.mix-bar.k2{background:var(--warn);}
+.mix-bar.k3{background:var(--good);}
+.mix-label{color:var(--muted);white-space:nowrap;}
+.alt-nums{display:flex;flex-direction:column;gap:2px;font-size:.8rem;}
+.alt-nums .n{display:flex;justify-content:space-between;gap:8px;font-variant-numeric:tabular-nums;}
+.alt-nums .n b{font-weight:700;}
+.gives-up{
+  font-size:.76rem;color:var(--warn);background:var(--warn-soft);
+  padding:6px 8px;border-radius:4px;line-height:1.45;margin-top:auto;
+}
+
+/* ---------- tables ---------- */
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:6px;background:var(--surface);}
+table{border-collapse:collapse;width:100%;font-size:.85rem;min-width:420px;}
+th,td{padding:9px 12px;text-align:right;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums;}
+th{font-weight:500;font-size:.74rem;color:var(--muted);letter-spacing:.03em;background:var(--surface-2);}
+tbody tr:last-child td{border-bottom:none;}
+tr.is-best td{background:var(--accent-soft);font-weight:700;}
+td.label{font-variant-numeric:normal;}
+.sev{display:inline-block;width:8px;height:8px;border-radius:50%;margin-left:6px;vertical-align:middle;}
+.sev.s-good{background:var(--good);}
+.sev.s-warn{background:var(--warn);}
+.sev.s-bad{background:var(--bad);}
+
+/* ---------- fee breakdown ---------- */
+.fees{display:flex;flex-direction:column;gap:8px;}
+.fee-track{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:12px 14px;}
+.fee-track h4{margin:0 0 8px;font-size:.92rem;font-weight:700;}
+.fee-line{display:flex;justify-content:space-between;gap:10px;font-size:.83rem;padding:5px 0;border-bottom:1px dashed var(--line);font-variant-numeric:tabular-nums;}
+.fee-line:last-of-type{border-bottom:none;}
+.fee-line .why{display:block;font-size:.72rem;color:var(--muted);font-variant-numeric:normal;margin-top:2px;}
+.fee-line.missing{color:var(--warn);}
+.fee-total{margin-top:8px;padding-top:8px;border-top:2px solid var(--ink);display:flex;justify-content:space-between;font-weight:700;font-variant-numeric:tabular-nums;}
+
+/* ---------- chart ---------- */
+.chartcard{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:14px;direction:ltr;}
+.chartcard svg{width:100%;height:auto;display:block;}
+.axis-line{stroke:var(--line);stroke-width:1;}
+.grid-line{stroke:var(--line);stroke-width:1;stroke-dasharray:2 4;}
+.tick-text{fill:var(--muted);font-family:'Heebo',sans-serif;font-size:11px;}
+.series-base{fill:none;stroke:var(--accent);stroke-width:2;}
+.series-stress{fill:none;stroke:var(--bad);stroke-width:2;stroke-dasharray:5 3;}
+.series-fill{fill:var(--accent);opacity:.09;}
+.legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;direction:rtl;font-size:.78rem;color:var(--muted);}
+.legend i{display:inline-block;width:16px;height:3px;margin-left:5px;vertical-align:middle;border-radius:2px;}
+.legend i.base{background:var(--accent);}
+.legend i.stress{background:var(--bad);}
+
+/* ---------- misc ---------- */
+.source{font-size:.72rem;color:var(--muted);margin-top:8px;line-height:1.5;}
+details{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:10px 14px;margin-top:12px;}
+summary{cursor:pointer;font-size:.85rem;font-weight:500;}
+details[open] summary{margin-bottom:10px;}
+.controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;}
+.checkline{display:flex;align-items:center;gap:8px;font-size:.85rem;margin-top:10px;}
+.rules-list{display:flex;flex-direction:column;gap:6px;}
+.rule{font-size:.83rem;padding:8px 10px;border-radius:4px;line-height:1.45;}
+.rule.blocking{background:var(--bad-soft);color:var(--bad);}
+.rule.warning{background:var(--warn-soft);color:var(--warn);}
+.rule.ok{background:var(--good-soft);color:var(--good);}
+footer{
+  margin-top:44px;padding-top:16px;border-top:1px solid var(--line);
+  font-size:.76rem;color:var(--muted);line-height:1.65;
+}
+footer p{margin:0 0 8px;}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;}}
+</style>
+
+<div class="wrap">
+  <header class="masthead">
+    <h1>סימולטור מחזור משכנתא</h1>
+    <p class="lede">הזינו את המסלולים במשכנתא הקיימת. הכלי בונה לוח סילוקין מלא לכל מסלול, מחשב את עמלת הפירעון המוקדם על רכיביה, ובודק מה עדיף: מחזור מלא, מחזור של חלק מהמסלולים בלבד, המתנה לתחנת יציאה — או להשאיר הכל כמו שהוא.</p>
+    <div class="stamps" id="stamps"></div>
+  </header>
+
+  <div class="notice">
+    <b>הריביות כאן הן נתוני דוגמה, לא ריביות אמיתיות.</b> מנוע החישוב אמיתי ובדוק, אבל טבלת הריביות, כללי הרגולציה והעמלות שמוזנים לו הם ערכי דוגמה לצורך הרצה. לפני שימוש מול לקוח יש להחליף אותם בנתוני שוק מעודכנים.
+  </div>
+
+  <section>
+    <div class="sec-head">
+      <h2>המשכנתא הקיימת</h2>
+      <p class="hint">מוזנת כאן משכנתא לדוגמה — ערכו את השדות לפי דוח היתרות שלכם</p>
+    </div>
+    <div class="tracks" id="tracks"></div>
+    <div class="row-actions">
+      <button class="btn" id="addTrack">+ הוסף מסלול</button>
+      <button class="btn" id="resetTracks">אפס לדוגמה</button>
+    </div>
+    <div class="rules-list" id="rules" style="margin-top:14px"></div>
+  </section>
+
+  <section>
+    <div class="sec-head"><h2>תמונת מצב</h2><p class="hint">המצב הנוכחי, בלי לשנות דבר</p></div>
+    <div class="tiles" id="snapshot"></div>
+    <div class="chartcard" style="margin-top:12px">
+      <div id="chart"></div>
+      <div class="legend">
+        <span><i class="base"></i>ההחזר החודשי בתרחיש בסיס</span>
+        <span><i class="stress"></i>בתרחיש המשולב (ריבית ואינפלציה עולות יחד)</span>
+      </div>
+    </div>
+    <p class="source" id="snapshotSource"></p>
+  </section>
+
+  <section>
+    <div class="sec-head"><h2>האם כדאי למחזר</h2><p class="hint">כל תתי-הקבוצות של המסלולים נבדקות, לא רק מחזור מלא</p></div>
+    <div id="verdict"></div>
+    <div class="tablewrap"><table id="subsetsTable"></table></div>
+    <p class="source">העלות הכוללת = ערך נוכחי של כל התשלומים העתידיים בשיעור ההיוון שנבחר, בתוספת עמלת הפירעון המוקדם על המסלולים שממוחזרים.</p>
+    <div id="waitBlock"></div>
+  </section>
+
+  <section>
+    <div class="sec-head"><h2>חלופות מחזור</h2><p class="hint">המנוע מייצר את התמהילים ומדרג אותם — לצד כל אחד, מה היא מוותרת עליו</p></div>
+    <div class="controls">
+      <div class="field">
+        <label for="termYears">תקופת ההלוואה החדשה (שנים)</label>
+        <input type="number" id="termYears" min="5" max="30" step="5" value="20">
+      </div>
+      <div class="field">
+        <label for="discountRate">שיעור היוון להשוואה (%)</label>
+        <input type="number" id="discountRate" min="0" max="12" step="0.5" value="4">
+      </div>
+    </div>
+    <div class="alts" id="alts" style="margin-top:12px"></div>
+  </section>
+
+  <section>
+    <div class="sec-head"><h2>תרחישי לחץ</h2><p class="hint">ההחזר המקסימלי בתרחיש המשולב הוא המספר שקובע אם משק בית שורד</p></div>
+    <div class="tablewrap"><table id="scenarioTable"></table></div>
+    <details>
+      <summary>הנחות התרחישים — ניתנות לשינוי</summary>
+      <div class="controls">
+        <div class="field"><label for="baseInfl">אינפלציה בתרחיש בסיס (%)</label><input type="number" id="baseInfl" value="2" step="0.5" min="0" max="15"></div>
+        <div class="field"><label for="highInfl">אינפלציה בתרחיש גבוה (%)</label><input type="number" id="highInfl" value="5" step="0.5" min="0" max="20"></div>
+        <div class="field"><label for="rateSteps">מדרג עליית ריבית (%)</label><input type="text" id="rateSteps" value="1,2,3"></div>
+        <div class="field"><label for="rampMonths">אורך כל שלב (חודשים)</label><input type="number" id="rampMonths" value="12" min="1" max="60"></div>
+      </div>
+    </details>
+  </section>
+
+  <section>
+    <div class="sec-head"><h2>עמלת פירעון מוקדם</h2><p class="hint">מפורקת לרכיבים — לא מספר אחד</p></div>
+    <div class="checkline">
+      <input type="checkbox" id="noticeGiven">
+      <label for="noticeGiven">הודעתי לבנק מראש (מבטל את עמלת אי-ההודעה המוקדמת)</label>
+    </div>
+    <div class="fees" id="fees" style="margin-top:12px"></div>
+  </section>
+
+  <footer>
+    <p><b>זו הערכה, לא ייעוץ משכנתאות, ולא התחייבות לתנאים.</b> התוצאות מבוססות על הנתונים שהזנתם ועל טבלאות הריביות, הכללים והעמלות שהוגדרו במערכת — יש לאמת מול הבנק לפני כל החלטה. אין כאן הבטחת חיסכון.</p>
+    <p>הנתונים שאתם מזינים מעובדים בדפדפן שלכם בלבד. הם לא נשלחים לשום שרת, לא נשמרים, ולא ייראו על ידי אף אחד אחר — גם לא אם תשתפו את הקישור לדף הזה.</p>
+    <p id="configFooter"></p>
+  </footer>
+</div>
+
+<script>
+/* ENGINE-START — פורט מתוך חבילת mortgage/ בפייתון (המנוע הבדוק). כל שינוי כאן חייב להישאר תואם ל-tests/test_mortgage_*.py */
+const CONFIG = {
+  rates: {
+    updatedAt: "2026-09-08",
+    primeRate: 6.0,
+    boiAverageRates: {
+      fixedNonLinked: {"0-2":4.9,"2-5":5.1,"5-10":5.3,"10-15":5.5,"15-20":5.6,"20-30":5.7},
+      fixedLinked:    {"0-2":2.9,"2-5":3.1,"5-10":3.3,"10-15":3.4,"15-20":3.5,"20-30":3.6}
+    },
+    banks: [
+      {id:"bank_leumi",name:"בנק לאומי",tracks:{
+        fixedNonLinked:{byTerm:{"10":{typ:4.7},"15":{typ:5.0},"20":{typ:5.3},"25":{typ:5.5},"30":{typ:5.7}}},
+        fixedLinked:{byTerm:{"10":{typ:2.8},"15":{typ:3.0},"20":{typ:3.2},"25":{typ:3.4},"30":{typ:3.5}}},
+        prime:{marginFromPrime:{typ:-0.5}},
+        varNonLinked:{byReset:{"18":{typ:4.0},"36":{typ:4.3},"60":{typ:4.5}}},
+        varLinked:{byReset:{"18":{typ:2.2},"36":{typ:2.4},"60":{typ:2.6}}}},
+        ltvSurcharge:[{upTo:0.45,delta:0},{upTo:0.60,delta:0.10},{upTo:0.75,delta:0.25}]},
+      {id:"bank_hapoalim",name:"בנק הפועלים",tracks:{
+        fixedNonLinked:{byTerm:{"10":{typ:4.8},"15":{typ:5.1},"20":{typ:5.4},"25":{typ:5.6},"30":{typ:5.8}}},
+        fixedLinked:{byTerm:{"10":{typ:2.9},"15":{typ:3.1},"20":{typ:3.3},"25":{typ:3.5},"30":{typ:3.6}}},
+        prime:{marginFromPrime:{typ:-0.4}},
+        varNonLinked:{byReset:{"18":{typ:4.1},"36":{typ:4.4},"60":{typ:4.6}}},
+        varLinked:{byReset:{"18":{typ:2.3},"36":{typ:2.5},"60":{typ:2.7}}}},
+        ltvSurcharge:[{upTo:0.45,delta:0},{upTo:0.60,delta:0.12},{upTo:0.75,delta:0.28}]},
+      {id:"bank_discount",name:"בנק דיסקונט",tracks:{
+        fixedNonLinked:{byTerm:{"10":{typ:4.75},"15":{typ:5.05},"20":{typ:5.35},"25":{typ:5.55},"30":{typ:5.75}}},
+        fixedLinked:{byTerm:{"10":{typ:2.75},"15":{typ:2.95},"20":{typ:3.15},"25":{typ:3.35},"30":{typ:3.45}}},
+        prime:{marginFromPrime:{typ:-0.45}},
+        varNonLinked:{byReset:{"18":{typ:4.05},"36":{typ:4.35},"60":{typ:4.55}}},
+        varLinked:{byReset:{"18":{typ:2.25},"36":{typ:2.45},"60":{typ:2.65}}}},
+        ltvSurcharge:[{upTo:0.45,delta:0},{upTo:0.60,delta:0.10},{upTo:0.75,delta:0.22}]},
+      {id:"bank_mizrahi",name:"מזרחי טפחות",tracks:{
+        fixedNonLinked:{byTerm:{"10":{typ:4.65},"15":{typ:4.95},"20":{typ:5.25},"25":{typ:5.45},"30":{typ:5.65}}},
+        fixedLinked:{byTerm:{"10":{typ:2.70},"15":{typ:2.90},"20":{typ:3.10},"25":{typ:3.30},"30":{typ:3.40}}},
+        prime:{marginFromPrime:{typ:-0.55}},
+        varNonLinked:{byReset:{"18":{typ:3.95},"36":{typ:4.25},"60":{typ:4.45}}},
+        varLinked:{byReset:{"18":{typ:2.15},"36":{typ:2.35},"60":{typ:2.55}}}},
+        ltvSurcharge:[{upTo:0.45,delta:0},{upTo:0.60,delta:0.10},{upTo:0.75,delta:0.20}]}
+    ]
+  },
+  rules: {
+    updatedAt: "2026-09-08",
+    sourceRef: "הוראת ניהול בנקאי תקין 329",
+    newLoan: {minFixedShare:0.3333, maxVariableShare:0.6667, maxPrimeShare:0.6667,
+              maxTermYears:30, ltvCaps:{singleHome:0.75,upgrader:0.70,investment:0.50},
+              ptiWarn:0.35, ptiMax:0.40}
+  },
+  fees: {
+    updatedAt: "2026-09-08",
+    operationalFee: 60,
+    noNoticeFee: {days:10},
+    capitalization: {discountsByRemainingTerm:[
+      {remainingYears:"0-1",discount:0.30},{remainingYears:"1-3",discount:0.20},{remainingYears:"3+",discount:0.00}]},
+    feeApplicability: {fixedNonLinked:"full",fixedLinked:"full",prime:"none",
+      varNonLinked:"toNextReset",varLinked:"toNextReset",varMakam:"toNextReset",
+      eligibility:"full",bullet:"full",balloon:"full"},
+    /* lagDays / assumedMonthlyRate הושארו בכוונה לא מוגדרים — כך רכיב הפרשי ההצמדה
+       מוצג כ"חסר נתון" ולא מוערך בשקט. */
+    indexationDiff: {applies:["fixedLinked","varLinked"]}
+  }
+};
+
+const VARIABLE_KINDS = new Set(["prime","varNonLinked","varLinked","varMakam"]);
+const FIXED_KINDS = new Set(["fixedNonLinked","fixedLinked"]);
+const STALE_AFTER_DAYS = 45;
+
+function isVariable(t){
+  // פריים מתעדכן בפועל כל חודש עם ריבית בנק ישראל — אין לו "תחנה" להגדיר,
+  // ולכן הוא תמיד משתנה גם בלי resetEveryMonths מפורש.
+  if(t.kind === "prime") return true;
+  return VARIABLE_KINDS.has(t.kind) && !!t.resetEveryMonths;
+}
+
+function pmt(balance, i, n){
+  if(n <= 0) return balance;
+  if(Math.abs(i) < 1e-12) return balance / n;
+  return balance * i / (1 - Math.pow(1 + i, -n));
+}
+
+function buildRatePath(track, scenario){
+  const months = track.monthsLeft;
+  if(!isVariable(track)) return new Array(months).fill(track.rate);
+  const isPrime = track.kind === "prime";
+  const resetEvery = isPrime ? (track.resetEveryMonths || 1) : track.resetEveryMonths;
+  let nextReset = (track.monthsToNextReset === null || track.monthsToNextReset === undefined)
+    ? (isPrime ? 0 : resetEvery) : track.monthsToNextReset;
+  const path = [];
+  let current = track.rate;
+  const deltas = scenario.anchorDeltaPath || [];
+  for(let m = 1; m <= months; m++){
+    if(m > nextReset){
+      let delta = 0;
+      if(deltas.length) delta = deltas[Math.min(m - 1, deltas.length - 1)];
+      current = track.rate + delta;
+      nextReset += resetEvery;
+    }
+    path.push(current);
+  }
+  return path;
+}
+
+function spitzerReal(balance, ratePath, months){
+  const rows = []; let bal = balance, p = null, prev = null;
+  for(let m = 0; m < months; m++){
+    const ar = ratePath[m], i = ar/100/12;
+    if(p === null || ar !== prev){ p = pmt(bal, i, months - m); prev = ar; }
+    const interest = bal * i;
+    let principal = p - interest, payment = p;
+    if(m === months - 1){ principal = bal; payment = principal + interest; }
+    const closing = bal - principal;
+    rows.push({month:m+1, opening:bal, rate:ar, payment, interest, principal, closing});
+    bal = closing;
+  }
+  return rows;
+}
+
+function equalPrincipalReal(balance, ratePath, months){
+  const rows = []; let bal = balance;
+  const fixed = months ? balance / months : 0;
+  for(let m = 0; m < months; m++){
+    const ar = ratePath[m], i = ar/100/12;
+    const interest = bal * i;
+    const principal = (m < months - 1) ? fixed : bal;
+    const payment = principal + interest;
+    const closing = bal - principal;
+    rows.push({month:m+1, opening:bal, rate:ar, payment, interest, principal, closing});
+    bal = closing;
+  }
+  return rows;
+}
+
+function bulletReal(balance, ratePath, months){
+  const rows = []; let bal = balance;
+  for(let m = 0; m < months; m++){
+    const ar = ratePath[m], i = ar/100/12;
+    const interest = bal * i;
+    const principal = (m < months - 1) ? 0 : bal;
+    const payment = principal + interest;
+    const closing = bal - principal;
+    rows.push({month:m+1, opening:bal, rate:ar, payment, interest, principal, closing});
+    bal = closing;
+  }
+  return rows;
+}
+
+const SCHEDULE_DISPATCH = {spitzer:spitzerReal, equalPrincipal:equalPrincipalReal,
+                           bullet:bulletReal, balloon:bulletReal};
+
+function graceReal(balance, ratePath, months, graceMonths, graceType, postSchedule){
+  const rows = []; let bal = balance;
+  const g = Math.min(graceMonths, months);
+  for(let m = 0; m < g; m++){
+    const ar = ratePath[m], i = ar/100/12;
+    const interest = bal * i;
+    let payment, principal, closing;
+    if(graceType === "full"){ payment = 0; principal = -interest; closing = bal + interest; }
+    else { payment = interest; principal = 0; closing = bal; }
+    rows.push({month:m+1, opening:bal, rate:ar, payment, interest, principal, closing});
+    bal = closing;
+  }
+  const remaining = months - g;
+  if(remaining > 0){
+    const fn = SCHEDULE_DISPATCH[postSchedule] || spitzerReal;
+    const tail = fn(bal, ratePath.slice(g), remaining);
+    tail.forEach((r, idx) => { r.month = g + idx + 1; rows.push(r); });
+  }
+  return rows;
+}
+
+function applyCpiLinkage(rows, annualInflation){
+  if(Math.abs(annualInflation) < 1e-12) return rows;
+  const monthlyFactor = Math.pow(1 + annualInflation/100, 1/12);
+  return rows.map(r => {
+    const f = Math.pow(monthlyFactor, r.month);
+    return {month:r.month, opening:r.opening*f, rate:r.rate, payment:r.payment*f,
+            interest:r.interest*f, principal:r.principal*f, closing:r.closing*f};
+  });
+}
+
+function generateSchedule(track, scenario){
+  scenario = scenario || {annualInflation:0, anchorDeltaPath:[]};
+  const ratePath = buildRatePath(track, scenario);
+  let rows;
+  if(track.schedule === "grace" || (track.graceMonths || 0) > 0){
+    rows = graceReal(track.balance, ratePath, track.monthsLeft, track.graceMonths || 0,
+                     track.graceType || "partial", track.postGraceSchedule || "spitzer");
+  } else {
+    rows = (SCHEDULE_DISPATCH[track.schedule] || spitzerReal)(track.balance, ratePath, track.monthsLeft);
+  }
+  return track.linkedToCpi ? applyCpiLinkage(rows, scenario.annualInflation) : rows;
+}
+
+/* ---------- metrics ---------- */
+function presentValue(rows, annualDiscountRate){
+  const i = annualDiscountRate/100/12;
+  if(Math.abs(i) < 1e-12) return rows.reduce((s,r)=>s+r.payment, 0);
+  return rows.reduce((s,r)=> s + r.payment / Math.pow(1+i, r.month), 0);
+}
+
+function combinedHousehold(rowsByTrack){
+  const lists = Object.values(rowsByTrack);
+  if(!lists.length) return [];
+  const maxMonths = Math.max(...lists.map(rs => rs.length ? rs[rs.length-1].month : 0));
+  const out = [];
+  for(let m = 0; m < maxMonths; m++)
+    out.push({month:m+1, payment:0, interest:0, principal:0, balance:0});
+  for(const rs of lists)
+    for(const r of rs){
+      const slot = out[r.month - 1];
+      slot.payment += r.payment; slot.interest += r.interest;
+      slot.principal += r.principal; slot.balance += r.closing;
+    }
+  return out;
+}
+
+/* ---------- scenarios ---------- */
+function stepPath(steps, rampMonths, horizon){
+  const path = [];
+  for(let m = 1; m <= horizon; m++){
+    const stage = Math.min(steps.length, Math.floor((m-1)/rampMonths) + 1);
+    path.push(stage >= 1 ? steps[stage-1] : 0);
+  }
+  return path;
+}
+
+function buildStandardScenarios(baseInfl, highInfl, rateSteps, rampMonths, horizon){
+  horizon = horizon || 360;
+  const zero = new Array(horizon).fill(0);
+  const up = stepPath(rateSteps, rampMonths, horizon);
+  return {
+    base:        {key:"base",         name:"בסיס",            annualInflation:baseInfl, anchorDeltaPath:zero},
+    rate_up:     {key:"rate_up",      name:"עליית ריבית",      annualInflation:baseInfl, anchorDeltaPath:up},
+    inflation_up:{key:"inflation_up", name:"אינפלציה גבוהה",   annualInflation:highInfl, anchorDeltaPath:zero},
+    combined:    {key:"combined",     name:"משולב",            annualInflation:highInfl, anchorDeltaPath:up}
+  };
+}
+
+/* ---------- fees ---------- */
+const TERM_BUCKETS = [["0-2",0,2],["2-5",2,5],["5-10",5,10],["10-15",10,15],["15-20",15,20],["20-30",20,30]];
+
+function averageRateForRemaining(table, years){
+  for(const [key, lo, hi] of TERM_BUCKETS){
+    if((lo === 0 && years >= lo && years <= hi) || (years > lo && years <= hi))
+      return [key, (key in table) ? table[key] : null];
+  }
+  return [null, null];
+}
+
+function discountForRemaining(feesCfg, years){
+  const entries = (feesCfg.capitalization || {}).discountsByRemainingTerm || [];
+  for(const e of entries){
+    const k = e.remainingYears;
+    if(k.endsWith("+")){ if(years >= parseFloat(k)) return e.discount; }
+    else {
+      const [lo, hi] = k.split("-").map(parseFloat);
+      if(years >= lo && years <= hi) return e.discount;
+    }
+  }
+  return 0;
+}
+
+function capitalizationFee(track, config){
+  const feesCfg = config.fees;
+  const applicability = (feesCfg.feeApplicability || {})[track.kind] || "full";
+  if(applicability === "none")
+    return {applicable:false, amount:0, missing:false,
+            reason:"מסלול פטור מעמלת היוון (לפי הגדרת סוג המסלול בתצורה)"};
+
+  let termMonths;
+  if(applicability === "toNextReset"){
+    if(!track.monthsToNextReset || track.monthsToNextReset <= 0)
+      return {applicable:false, amount:0, missing:false, reason:"פטור מעמלת היוון — נמצא בתחנת יציאה"};
+    termMonths = track.monthsToNextReset;
+  } else termMonths = track.monthsLeft;
+
+  const tableKey = track.linkedToCpi ? "fixedLinked" : "fixedNonLinked";
+  const table = (config.rates.boiAverageRates || {})[tableKey];
+  if(!table) return {applicable:null, amount:null, missing:true,
+    reason:`חסר נתון: אין טבלת ריבית ממוצעת (${tableKey}) בתצורה`};
+
+  const years = termMonths / 12;
+  const [bucket, avgRate] = averageRateForRemaining(table, years);
+  if(avgRate === null || avgRate === undefined)
+    return {applicable:null, amount:null, missing:true,
+      reason:`חסר נתון: אין ריבית ממוצעת פרסומית לתקופה הנותרת (${years.toFixed(1)} שנים)`};
+
+  if(track.rate <= avgRate)
+    return {applicable:true, amount:0, missing:false, avgRate, bucket,
+      reason:`ריבית החוזה (${track.rate.toFixed(2)}%) אינה גבוהה מהריבית הממוצעת לתקופה (${avgRate.toFixed(2)}%) — אין עמלת היוון`};
+
+  const fn = SCHEDULE_DISPATCH[track.schedule] || spitzerReal;
+  const contractRows = fn(track.balance, new Array(termMonths).fill(track.rate), termMonths);
+  const avgRows = fn(track.balance, new Array(termMonths).fill(avgRate), termMonths);
+  const iAvg = avgRate/100/12;
+  let diffPv = 0;
+  for(let k = 0; k < contractRows.length; k++)
+    diffPv += (contractRows[k].payment - avgRows[k].payment) / Math.pow(1+iAvg, contractRows[k].month);
+  diffPv = Math.max(diffPv, 0);
+
+  const discount = discountForRemaining(feesCfg, years);
+  return {applicable:true, missing:false, beforeDiscount:diffPv, discountRate:discount,
+    amount:diffPv * (1 - discount), avgRate, bucket,
+    reason:`מחושב לפי טבלת ריביות ממוצעות מתאריך ${config.rates.updatedAt} (שכבה: ${bucket} שנים, ריבית ממוצעת ${avgRate}%)`};
+}
+
+function computePrepaymentFee(track, config, noticeGiven){
+  const components = {};
+  components.capitalization = capitalizationFee(track, config);
+
+  const opFee = config.fees.operationalFee;
+  components.operational = (opFee === null || opFee === undefined)
+    ? {amount:null, missing:true, reason:"חסר נתון: עמלה תפעולית לא הוגדרה בתצורה"}
+    : {amount:opFee, missing:false, reason:`עמלה תפעולית קבועה, מתצורה מתאריך ${config.fees.updatedAt}`};
+
+  const nn = config.fees.noNoticeFee;
+  if(!nn || nn.days === undefined){
+    components.noNotice = {amount:null, missing:true, reason:"חסר נתון: ימי הודעה מוקדמת לא הוגדרו בתצורה"};
+  } else {
+    const full = track.balance * (track.rate/100/365) * nn.days;
+    components.noNotice = {amount: noticeGiven ? 0 : full, missing:false, days:nn.days, fullAmount:full,
+      reason: noticeGiven ? `נמנעה — ניתנה הודעה מראש ${nn.days} ימים`
+        : `ריבית ${nn.days} ימים על היתרה. אפשר להימנע מהעמלה הזו לגמרי בהודעה מראש לבנק.`};
+  }
+
+  if(!track.linkedToCpi){
+    components.indexationDiff = {applies:false, amount:0, missing:false, reason:"לא רלוונטי — מסלול לא צמוד"};
+  } else {
+    const cfg = config.fees.indexationDiff || {};
+    if(cfg.lagDays === undefined || cfg.lagDays === null)
+      components.indexationDiff = {applies:true, amount:null, missing:true,
+        reason:"חסר נתון: פער ימי ההצמדה (lagDays) לא הוגדר בתצורה עבור מסלול צמוד"};
+    else if(cfg.assumedMonthlyRate === undefined || cfg.assumedMonthlyRate === null)
+      components.indexationDiff = {applies:true, amount:null, missing:true,
+        reason:"חסר נתון: הנחת המדד החודשית לא הוגדרה בתצורה"};
+    else
+      components.indexationDiff = {applies:true, missing:false,
+        amount: track.balance * cfg.assumedMonthlyRate * (cfg.lagDays/30),
+        reason:`הפרש הצמדה משוער בגין ${cfg.lagDays} ימי פיגור בפרסום המדד`};
+  }
+
+  const hasMissing = Object.values(components).some(c => c.missing);
+  const total = hasMissing ? null
+    : Object.values(components).reduce((s,c) => s + (c.amount || 0), 0);
+  return {trackId:track.id, components, total, hasMissingData:hasMissing};
+}
+
+function totalPrepaymentFee(tracks, config, noticeGiven){
+  const perTrack = tracks.map(t => computePrepaymentFee(t, config, noticeGiven));
+  const hasMissing = perTrack.some(p => p.hasMissingData);
+  return {perTrack, hasMissingData:hasMissing,
+          total: hasMissing ? null : perTrack.reduce((s,p) => s + p.total, 0)};
+}
+
+/* ---------- rules ---------- */
+function mixShares(tracks){
+  const total = tracks.reduce((s,t) => s + t.balance, 0);
+  if(total <= 0) return {fixed:0, variable:0, prime:0};
+  const sum = pred => tracks.filter(pred).reduce((s,t) => s + t.balance, 0) / total;
+  return {fixed: sum(t => FIXED_KINDS.has(t.kind)),
+          variable: sum(t => VARIABLE_KINDS.has(t.kind)),
+          prime: sum(t => t.kind === "prime")};
+}
+
+function evaluateMix(tracks, rulesCfg, opts){
+  opts = opts || {};
+  if(!rulesCfg || !Object.keys(rulesCfg).length)
+    return [{severity:"blocking", rule:"config", message:"חסר נתון: אין כללי רגולציה מוגדרים"}];
+  const v = [], s = mixShares(tracks), pct = x => (x*100).toFixed(1) + "%";
+
+  if(rulesCfg.minFixedShare !== undefined && s.fixed < rulesCfg.minFixedShare - 1e-9)
+    v.push({severity:"blocking", rule:"minFixedShare",
+      message:`שיעור המסלולים בריבית קבועה (${pct(s.fixed)}) נמוך מהמינימום הנדרש (${pct(rulesCfg.minFixedShare)})`});
+  if(rulesCfg.maxVariableShare !== undefined && s.variable > rulesCfg.maxVariableShare + 1e-9)
+    v.push({severity:"blocking", rule:"maxVariableShare",
+      message:`שיעור המסלולים בריבית משתנה (${pct(s.variable)}) חורג מהמקסימום המותר (${pct(rulesCfg.maxVariableShare)})`});
+  if(rulesCfg.maxPrimeShare !== undefined && s.prime > rulesCfg.maxPrimeShare + 1e-9)
+    v.push({severity:"blocking", rule:"maxPrimeShare",
+      message:`שיעור מסלול הפריים (${pct(s.prime)}) חורג מהמקסימום המותר (${pct(rulesCfg.maxPrimeShare)})`});
+  if(opts.termYears !== undefined && rulesCfg.maxTermYears !== undefined && opts.termYears > rulesCfg.maxTermYears + 1e-9)
+    v.push({severity:"blocking", rule:"maxTermYears",
+      message:`תקופת ההלוואה (${opts.termYears} שנים) חורגת מהמקסימום המותר (${rulesCfg.maxTermYears} שנים)`});
+  if(opts.ltv !== undefined && opts.propertyType){
+    const cap = (rulesCfg.ltvCaps || {})[opts.propertyType];
+    if(cap !== undefined && opts.ltv > cap + 1e-9)
+      v.push({severity:"blocking", rule:"ltvCap",
+        message:`שיעור המימון (${pct(opts.ltv)}) חורג מהמקסימום המותר לסוג הנכס (${pct(cap)})`});
+  }
+  if(opts.pti !== undefined && opts.pti !== null){
+    if(rulesCfg.ptiMax !== undefined && opts.pti > rulesCfg.ptiMax + 1e-9)
+      v.push({severity:"blocking", rule:"ptiMax",
+        message:`שיעור ההחזר מהכנסה (${pct(opts.pti)}) חורג מהמקסימום המותר (${pct(rulesCfg.ptiMax)})`});
+    else if(rulesCfg.ptiWarn !== undefined && opts.pti > rulesCfg.ptiWarn + 1e-9)
+      v.push({severity:"warning", rule:"ptiWarn",
+        message:`שיעור ההחזר מהכנסה (${pct(opts.pti)}) גבוה מסף האזהרה (${pct(rulesCfg.ptiWarn)})`});
+  }
+  return v;
+}
+
+const hasBlocking = vs => vs.some(v => v.severity === "blocking");
+
+/* ---------- recommendations ---------- */
+function getBankRate(bank, kind, termYears, resetMonths){
+  const cfg = (bank.tracks || {})[kind];
+  if(!cfg) return null;
+  if(kind === "fixedNonLinked" || kind === "fixedLinked"){
+    const e = (cfg.byTerm || {})[String(termYears)];
+    return e ? e.typ : null;
+  }
+  if(kind === "prime") return cfg.marginFromPrime ? cfg.marginFromPrime.typ : null;
+  const e = (cfg.byReset || {})[String(resetMonths)];
+  return e ? e.typ : null;
+}
+
+function ltvSurcharge(bank, ltv){
+  if(ltv === undefined || ltv === null) return 0;
+  for(const e of bank.ltvSurcharge || []) if(ltv <= e.upTo + 1e-9) return e.delta;
+  return 0;
+}
+
+function buildNewTrack(id, kind, amount, config, bank, termYears, resetMonths, ltv){
+  const months = termYears * 12;
+  const base = {id, kind, balance:amount, monthsLeft:months, originalMonths:months,
+                schedule:"spitzer", bankId:bank.id};
+  if(kind === "prime"){
+    const margin = getBankRate(bank, "prime");
+    if(margin === null) return null;
+    return Object.assign(base, {rate: config.rates.primeRate + margin + ltvSurcharge(bank, ltv),
+                                linkedToCpi:false});
+  }
+  if(kind === "varNonLinked" || kind === "varLinked"){
+    const r = getBankRate(bank, kind, null, resetMonths);
+    if(r === null) return null;
+    return Object.assign(base, {rate: r + ltvSurcharge(bank, ltv), linkedToCpi: kind === "varLinked",
+                                resetEveryMonths:resetMonths, monthsToNextReset:resetMonths});
+  }
+  const r = getBankRate(bank, kind, termYears);
+  if(r === null) return null;
+  return Object.assign(base, {rate: r + ltvSurcharge(bank, ltv), linkedToCpi: kind === "fixedLinked"});
+}
+
+function evaluateAlternative(tracks, scenarios, discountRate){
+  const perScenario = {};
+  for(const [name, sc] of Object.entries(scenarios)){
+    const rowsByTrack = {};
+    tracks.forEach(t => { rowsByTrack[t.id] = generateSchedule(t, sc); });
+    const combined = combinedHousehold(rowsByTrack);
+    const payments = combined.map(r => r.payment);
+    const i = discountRate/100/12;
+    const pv = Math.abs(i) < 1e-12
+      ? payments.reduce((a,b) => a+b, 0)
+      : combined.reduce((s,r) => s + r.payment / Math.pow(1+i, r.month), 0);
+    perScenario[name] = {
+      totalPayments: payments.reduce((a,b) => a+b, 0),
+      firstPayment: payments.length ? payments[0] : 0,
+      maxPayment: payments.length ? Math.max(...payments) : 0,
+      pv, months: combined.length
+    };
+  }
+  return {perScenario};
+}
+
+function shareCombinations(nBuckets, step){
+  const steps = Math.round(1/step), out = [];
+  (function rec(remBuckets, remSteps, acc){
+    if(remBuckets === 1){ out.push(acc.concat([remSteps])); return; }
+    for(let s = 0; s <= remSteps; s++) rec(remBuckets - 1, remSteps - s, acc.concat([s]));
+  })(nBuckets, steps, []);
+  return out.map(c => c.map(x => x * step));
+}
+
+const GRID_KINDS = ["fixedNonLinked","prime","varNonLinked"];
+
+function generateAlternatives(amount, termYears, config, rulesCfg, scenarios, discountRate, opts){
+  opts = opts || {};
+  const step = opts.shareStep || 0.25;
+  const resetMonths = opts.varResetMonths || 60;
+  const results = [];
+  for(const bank of config.rates.banks){
+    for(const shares of shareCombinations(GRID_KINDS.length, step)){
+      const tracks = [];
+      let ok = true;
+      GRID_KINDS.forEach((kind, idx) => {
+        if(!ok || shares[idx] <= 0) return;
+        const t = buildNewTrack(`${kind}_${idx}`, kind, amount * shares[idx], config, bank,
+                                termYears, resetMonths, opts.ltv);
+        if(!t){ ok = false; return; }
+        tracks.push(t);
+      });
+      if(!ok || !tracks.length) continue;
+      const violations = evaluateMix(tracks, rulesCfg, {termYears, ltv:opts.ltv, propertyType:opts.propertyType});
+      if(hasBlocking(violations)) continue;
+      const metrics = evaluateAlternative(tracks, scenarios, discountRate);
+      const sharesObj = {};
+      GRID_KINDS.forEach((k, i) => { sharesObj[k] = shares[i]; });
+      results.push({bankId:bank.id, bankName:bank.name, shares:sharesObj, tracks, violations, metrics});
+    }
+  }
+  return results;
+}
+
+function normFn(values){
+  const lo = Math.min(...values), hi = Math.max(...values);
+  if(hi - lo < 1e-9) return () => 0;
+  return v => (v - lo) / (hi - lo);
+}
+
+function rankAlternatives(alts){
+  if(!alts.length) return {};
+  const minBy = fn => alts.reduce((best, a) => fn(a) < fn(best) ? a : best, alts[0]);
+  const stressKey = alts[0].metrics.perScenario.combined ? "combined" : "base";
+  const pv = a => a.metrics.perScenario.base.pv;
+  const first = a => a.metrics.perScenario.base.firstPayment;
+  const worst = a => a.metrics.perScenario[stressKey].maxPayment;
+
+  const pvNorm = normFn(alts.map(pv)), worstNorm = normFn(alts.map(worst));
+  return {
+    cheapest:      {label:"הזול ביותר",        alt:minBy(pv),
+      why:"מינימום סך תשלומים בערך נוכחי — מתאים למי שמתכנן להישאר עם ההלוואה עד הסוף."},
+    lowestPayment: {label:"ההחזר הנמוך ביותר", alt:minBy(first),
+      why:"מינימום החזר חודשי ראשוני — מתאים כשתזרים המזומנים החודשי הוא האילוץ המרכזי."},
+    mostResilient: {label:"העמיד ביותר",       alt:minBy(worst),
+      why:"מינימום ההחזר המקסימלי בתרחיש המשולב — מתאים למי שרוצה ודאות שההחזר לא יצא משליטה."},
+    balanced:      {label:"המאוזן",            alt:minBy(a => 0.5*pvNorm(pv(a)) + 0.5*worstNorm(worst(a))),
+      why:"פשרה בין העלות הכוללת לעמידות בתרחישי לחץ, בלי קיצוניות לאף כיוון."}
+  };
+}
+
+function evaluateRefinanceSubsets(existing, replacementBuilder, config, rulesCfg, scenarios, discountRate, noticeGiven){
+  const n = existing.length, results = [];
+  for(let mask = 0; mask < (1 << n); mask++){
+    const subset = [], remainder = [];
+    for(let i = 0; i < n; i++) ((mask >> i) & 1 ? subset : remainder).push(existing[i]);
+
+    let fee, newTracks;
+    if(subset.length){
+      fee = totalPrepaymentFee(subset, config, noticeGiven);
+      if(fee.hasMissingData){
+        results.push({subsetIds:subset.map(t=>t.id), comparable:false,
+          reason:"לא ניתן להשוות — חסר נתון בעמלת הפירעון המוקדם"});
+        continue;
+      }
+      const amount = subset.reduce((s,t) => s + t.balance, 0);
+      const avgMonths = Math.round(subset.reduce((s,t) => s + t.monthsLeft, 0) / subset.length);
+      newTracks = replacementBuilder(amount, avgMonths);
+    } else { fee = {total:0, hasMissingData:false, perTrack:[]}; newTracks = []; }
+
+    const household = newTracks.concat(remainder);
+    const violations = household.length ? evaluateMix(household, rulesCfg) : [];
+    const metrics = household.length ? evaluateAlternative(household, scenarios, discountRate)
+      : {perScenario: Object.fromEntries(Object.keys(scenarios).map(k =>
+          [k, {totalPayments:0, firstPayment:0, maxPayment:0, pv:0, months:0}]))};
+
+    results.push({subsetIds:subset.map(t=>t.id), isFullRefinance: subset.length === n,
+      isDoNothing: subset.length === 0, comparable:true, fee, violations,
+      blocked: hasBlocking(violations), metrics,
+      totalCostPv: metrics.perScenario.base.pv + (fee.total || 0)});
+  }
+  const comparable = results.filter(r => r.comparable && !r.blocked)
+                            .sort((a,b) => a.totalCostPv - b.totalCostPv);
+  return {results, comparable};
+}
+
+function refinanceHeadline(comparable){
+  if(!comparable.length) return {hasData:false};
+  const doNothing = comparable.find(r => r.isDoNothing);
+  const refis = comparable.filter(r => !r.isDoNothing);
+  const overallBest = comparable[0];
+  if(!doNothing || !refis.length)
+    return {hasData:true, bestIsDoNothing: doNothing === overallBest, savings:null, worthwhile:null};
+  const bestRefi = refis.reduce((b,r) => r.totalCostPv < b.totalCostPv ? r : b, refis[0]);
+  const savings = doNothing.totalCostPv - bestRefi.totalCostPv;
+  return {hasData:true, bestIsDoNothing: overallBest === doNothing, best:overallBest,
+          doNothing, bestRefi, savings, worthwhile: savings > 1e-6};
+}
+
+function waitForResetAlternative(track, config, newRateNow, discountRate, baseScenario){
+  if(!isVariable(track) || !track.monthsToNextReset)
+    return {comparable:false, reason:"רלוונטי רק למסלול משתנה עם תחנת יציאה ידועה"};
+  const n = track.monthsToNextReset;
+  if(n <= 0 || n >= track.monthsLeft)
+    return {comparable:false, reason:"אין חלון המתנה משמעותי לפני תחנת היציאה"};
+
+  const feeToday = computePrepaymentFee(track, config, false);
+  if(feeToday.hasMissingData)
+    return {comparable:false, reason:"לא ניתן להשוות — חסר נתון בעמלת הפירעון המוקדם"};
+
+  const refiNow = {id:track.id, kind:"fixedNonLinked", balance:track.balance, rate:newRateNow,
+                   monthsLeft:track.monthsLeft, originalMonths:track.monthsLeft,
+                   schedule:track.schedule, linkedToCpi:false};
+  const pvRefiNow = feeToday.total + presentValue(generateSchedule(refiNow, baseScenario), discountRate);
+
+  const fn = SCHEDULE_DISPATCH[track.schedule] || spitzerReal;
+  const preRows = fn(track.balance, buildRatePath(track, baseScenario).slice(0, n), n);
+  const balanceAtReset = preRows[preRows.length - 1].closing;
+  const remaining = track.monthsLeft - n;
+  const postTrack = {id:track.id, kind:"fixedNonLinked", balance:balanceAtReset, rate:newRateNow,
+                     monthsLeft:remaining, originalMonths:remaining, schedule:track.schedule,
+                     linkedToCpi:false};
+  const postRows = generateSchedule(postTrack, baseScenario).map(r => Object.assign({}, r, {month:r.month + n}));
+  let combined = preRows.concat(postRows);
+  if(track.linkedToCpi) combined = applyCpiLinkage(combined, baseScenario.annualInflation);
+  const pvWait = presentValue(combined, discountRate);
+
+  return {comparable:true, monthsToReset:n, pvRefinanceToday:pvRefiNow, pvWait,
+          winner: pvWait < pvRefiNow ? "wait" : "refinance_today",
+          savings: Math.abs(pvWait - pvRefiNow)};
+}
+
+function daysSince(dateStr){
+  const d = new Date(dateStr + "T00:00:00");
+  return Math.floor((Date.now() - d.getTime()) / 86400000);
+}
+/* ENGINE-END */
+
+/* ================= UI ================= */
+const KIND_LABELS = {
+  fixedNonLinked:"קבועה לא צמודה (קל\"צ)",
+  fixedLinked:"קבועה צמודה",
+  prime:"פריים",
+  varNonLinked:"משתנה לא צמודה",
+  varLinked:"משתנה צמודה",
+  bullet:"בלון"
+};
+const SCHEDULE_LABELS = {spitzer:"שפיצר", equalPrincipal:"קרן שווה", bullet:"בלון"};
+
+const EXAMPLE_TRACKS = () => ([
+  {id:"מסלול 1", kind:"fixedNonLinked", balance:600000, rate:5.2, monthsLeft:220,
+   originalMonths:240, schedule:"spitzer", linkedToCpi:false,
+   resetEveryMonths:null, monthsToNextReset:null},
+  {id:"מסלול 2", kind:"prime", balance:400000, rate:7.0, monthsLeft:220,
+   originalMonths:240, schedule:"spitzer", linkedToCpi:false,
+   resetEveryMonths:null, monthsToNextReset:null},
+  {id:"מסלול 3", kind:"varNonLinked", balance:250000, rate:6.4, monthsLeft:200,
+   originalMonths:240, schedule:"spitzer", linkedToCpi:false,
+   resetEveryMonths:60, monthsToNextReset:8}
+]);
+
+let tracks = EXAMPLE_TRACKS();
+
+const shekel = new Intl.NumberFormat("he-IL", {maximumFractionDigits:0});
+const money = v => (v === null || v === undefined || !isFinite(v)) ? "—" : shekel.format(Math.round(v)) + " ₪";
+const el = id => document.getElementById(id);
+
+function readNum(id, fallback){
+  const v = parseFloat(el(id).value);
+  return isFinite(v) ? v : fallback;
+}
+
+/* ---------- track editor ---------- */
+function renderTracks(){
+  const host = el("tracks");
+  host.innerHTML = "";
+  tracks.forEach((t, idx) => {
+    const card = document.createElement("div");
+    card.className = "track";
+    const variable = VARIABLE_KINDS.has(t.kind) && t.kind !== "prime";
+    card.innerHTML = `
+      <div class="track-top">
+        <span class="track-name">${t.id}</span>
+        <span class="track-tag">${KIND_LABELS[t.kind] || t.kind}</span>
+        <button class="btn-icon" data-del="${idx}" aria-label="מחק מסלול" title="מחק מסלול">✕</button>
+      </div>
+      <div class="fields">
+        <div class="field">
+          <label>סוג מסלול</label>
+          <select data-f="kind" data-i="${idx}">
+            ${Object.entries(KIND_LABELS).map(([k,l]) =>
+              `<option value="${k}"${k===t.kind?" selected":""}>${l}</option>`).join("")}
+          </select>
+        </div>
+        <div class="field"><label>יתרה לסילוק (₪)</label>
+          <input type="number" inputmode="numeric" step="1000" min="0" data-f="balance" data-i="${idx}" value="${t.balance}"></div>
+        <div class="field"><label>ריבית שנתית (%)</label>
+          <input type="number" inputmode="decimal" step="0.05" min="0" max="25" data-f="rate" data-i="${idx}" value="${t.rate}"></div>
+        <div class="field"><label>חודשים שנותרו</label>
+          <input type="number" inputmode="numeric" step="1" min="1" max="480" data-f="monthsLeft" data-i="${idx}" value="${t.monthsLeft}"></div>
+        <div class="field"><label>לוח סילוקין</label>
+          <select data-f="schedule" data-i="${idx}">
+            ${Object.entries(SCHEDULE_LABELS).map(([k,l]) =>
+              `<option value="${k}"${k===t.schedule?" selected":""}>${l}</option>`).join("")}
+          </select>
+        </div>
+        ${variable ? `
+        <div class="field"><label>תחנת יציאה כל (חודשים)</label>
+          <input type="number" inputmode="numeric" step="6" min="0" data-f="resetEveryMonths" data-i="${idx}" value="${t.resetEveryMonths || 0}"></div>
+        <div class="field"><label>חודשים לתחנה הקרובה</label>
+          <input type="number" inputmode="numeric" step="1" min="0" data-f="monthsToNextReset" data-i="${idx}" value="${t.monthsToNextReset || 0}"></div>` : ""}
+      </div>`;
+    host.appendChild(card);
+  });
+
+  host.querySelectorAll("[data-f]").forEach(input => {
+    input.addEventListener("change", e => {
+      const i = +e.target.dataset.i, f = e.target.dataset.f;
+      const t = tracks[i];
+      if(f === "kind"){
+        t.kind = e.target.value;
+        t.linkedToCpi = (t.kind === "fixedLinked" || t.kind === "varLinked");
+        if(!VARIABLE_KINDS.has(t.kind) || t.kind === "prime"){
+          t.resetEveryMonths = null; t.monthsToNextReset = null;
+        } else if(!t.resetEveryMonths){ t.resetEveryMonths = 60; t.monthsToNextReset = 12; }
+        renderTracks();
+      } else if(f === "schedule"){ t.schedule = e.target.value; }
+      else {
+        const v = parseFloat(e.target.value);
+        t[f] = isFinite(v) ? v : 0;
+        if(f === "resetEveryMonths" && !t[f]) t[f] = null;
+      }
+      recompute();
+    });
+  });
+  host.querySelectorAll("[data-del]").forEach(btn => {
+    btn.addEventListener("click", e => {
+      if(tracks.length <= 1) return;
+      tracks.splice(+e.target.dataset.del, 1);
+      renderTracks(); recompute();
+    });
+  });
+}
+
+/* ---------- chart ---------- */
+function renderChart(baseSeries, stressSeries){
+  const W = 720, H = 250, padT = 14, padB = 30, padL = 62, padR = 14;
+  const maxMonth = Math.max(baseSeries.length, stressSeries.length, 1);
+  const maxVal = Math.max(...baseSeries, ...stressSeries, 1);
+  const yTop = Math.ceil(maxVal / 1000) * 1000;
+  const x = m => padL + (m / maxMonth) * (W - padL - padR);
+  const y = v => padT + (1 - v / yTop) * (H - padT - padB);
+
+  const pts = arr => arr.map((v,i) => `${x(i+1).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+  const areaPts = `${x(0)},${y(0)} ${pts(baseSeries)} ${x(baseSeries.length)},${y(0)}`;
+
+  const yTicks = [0, 0.25, 0.5, 0.75, 1].map(f => Math.round(yTop * f));
+  const years = Math.ceil(maxMonth / 12);
+  const yearStep = years > 20 ? 5 : (years > 10 ? 4 : 2);
+  const xTicks = [];
+  for(let yr = 0; yr <= years; yr += yearStep) xTicks.push(yr);
+
+  el("chart").innerHTML = `
+  <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="ההחזר החודשי לאורך זמן, בתרחיש בסיס ובתרחיש משולב">
+    ${yTicks.map(v => `<line class="grid-line" x1="${padL}" y1="${y(v).toFixed(1)}" x2="${W-padR}" y2="${y(v).toFixed(1)}"></line>`).join("")}
+    ${yTicks.map(v => `<text class="tick-text" x="${padL-8}" y="${(y(v)+4).toFixed(1)}" text-anchor="end">${shekel.format(v)}</text>`).join("")}
+    <polygon class="series-fill" points="${areaPts}"></polygon>
+    <polyline class="series-base" points="${pts(baseSeries)}"></polyline>
+    <polyline class="series-stress" points="${pts(stressSeries)}"></polyline>
+    <line class="axis-line" x1="${padL}" y1="${H-padB}" x2="${W-padR}" y2="${H-padB}"></line>
+    ${xTicks.map(yr => `<text class="tick-text" x="${x(yr*12).toFixed(1)}" y="${H-padB+18}" text-anchor="middle">${yr === 0 ? "היום" : "שנה " + yr}</text>`).join("")}
+  </svg>`;
+}
+
+/* ---------- main recompute ---------- */
+function recompute(){
+  const live = tracks.filter(t => t.balance > 0 && t.monthsLeft > 0);
+  if(!live.length) return;
+
+  const baseInfl = readNum("baseInfl", 2);
+  const highInfl = readNum("highInfl", 5);
+  const rampMonths = Math.max(1, readNum("rampMonths", 12));
+  const rateSteps = el("rateSteps").value.split(",")
+    .map(s => parseFloat(s.trim())).filter(v => isFinite(v));
+  const scenarios = buildStandardScenarios(baseInfl, highInfl, rateSteps.length ? rateSteps : [1,2,3], rampMonths);
+  const termYears = Math.max(5, Math.min(30, Math.round(readNum("termYears", 20) / 5) * 5));
+  const discountRate = readNum("discountRate", 4);
+  const noticeGiven = el("noticeGiven").checked;
+  const rulesCfg = CONFIG.rules.newLoan;
+
+  /* --- snapshot --- */
+  const rowsByTrack = {};
+  live.forEach(t => { rowsByTrack[t.id] = generateSchedule(t, scenarios.base); });
+  const combined = combinedHousehold(rowsByTrack);
+  const totalBalance = live.reduce((s,t) => s + t.balance, 0);
+  const totalPay = combined.reduce((s,r) => s + r.payment, 0);
+  const totalPrincipal = combined.reduce((s,r) => s + r.principal, 0);
+
+  el("snapshot").innerHTML = [
+    ["יתרה לסילוק היום", money(totalBalance), `${live.length} מסלולים`],
+    ["החזר חודשי נוכחי", money(combined[0].payment), "בתרחיש בסיס"],
+    ["סך תשלומים עתידי", money(totalPay), `על פני ${Math.round(combined.length/12)} שנים`],
+    ["מזה ריבית והצמדה", money(totalPay - totalPrincipal),
+     `${((totalPay - totalPrincipal) / totalPay * 100).toFixed(0)}% מהתשלומים`]
+  ].map(([k,v,s]) => `<div class="tile"><span class="k">${k}</span><span class="v">${v}</span><span class="sub">${s}</span></div>`).join("");
+
+  const stressRows = {};
+  live.forEach(t => { stressRows[t.id] = generateSchedule(t, scenarios.combined); });
+  const combinedStress = combinedHousehold(stressRows);
+  renderChart(combined.map(r => r.payment), combinedStress.map(r => r.payment));
+  el("snapshotSource").textContent =
+    `מחושב מלוח סילוקין חודשי מלא לכל מסלול. ריבית הפריים והריביות הממוצעות נלקחו מטבלת הריביות מתאריך ${CONFIG.rates.updatedAt}.`;
+
+  /* --- rules --- */
+  const violations = evaluateMix(live, rulesCfg);
+  el("rules").innerHTML = violations.length
+    ? violations.map(v => `<div class="rule ${v.severity}">${v.severity === "blocking" ? "חורג" : "לתשומת לב"}: ${v.message}</div>`).join("")
+    : `<div class="rule ok">התמהיל הנוכחי עומד בכללי הרגולציה שהוגדרו במערכת.</div>`;
+
+  /* --- scenarios --- */
+  const scenarioRows = ["base","rate_up","inflation_up","combined"].map(key => {
+    const sc = scenarios[key], rbt = {};
+    live.forEach(t => { rbt[t.id] = generateSchedule(t, sc); });
+    const c = combinedHousehold(rbt);
+    const pays = c.map(r => r.payment);
+    return {name:sc.name, first:pays[0], max:Math.max(...pays), total:pays.reduce((a,b)=>a+b,0)};
+  });
+  const baseMax = scenarioRows[0].max;
+  el("scenarioTable").innerHTML = `
+    <thead><tr><th>תרחיש</th><th>החזר ראשון</th><th>החזר מקסימלי</th><th>שינוי מול הבסיס</th><th>סך תשלומים</th></tr></thead>
+    <tbody>${scenarioRows.map((r,i) => {
+      const delta = r.max - baseMax;
+      const sev = delta <= 0 ? "s-good" : (delta / baseMax > 0.2 ? "s-bad" : "s-warn");
+      return `<tr${i===3?' class="is-best"':''}><td class="label">${r.name}</td><td>${money(r.first)}</td>
+      <td>${money(r.max)}</td><td><span class="sev ${sev}"></span>${delta > 0 ? "+" : ""}${money(delta)}</td>
+      <td>${money(r.total)}</td></tr>`;
+    }).join("")}</tbody>`;
+
+  /* --- fees --- */
+  const feeResult = totalPrepaymentFee(live, CONFIG, noticeGiven);
+  const COMP_LABELS = {capitalization:"עמלת היוון", operational:"עמלה תפעולית",
+                       noNotice:"אי-הודעה מוקדמת", indexationDiff:"הפרשי הצמדה"};
+  el("fees").innerHTML = feeResult.perTrack.map(p => {
+    const t = live.find(x => x.id === p.trackId);
+    const lines = Object.entries(p.components).map(([k,c]) => {
+      const val = c.missing ? "חסר נתון" : money(c.amount);
+      const extra = (k === "capitalization" && c.discountRate)
+        ? `<span class="why">לפני הנחה: ${money(c.beforeDiscount)} · הנחה של ${(c.discountRate*100).toFixed(0)}% לפי התקופה שנותרה</span>` : "";
+      return `<div class="fee-line${c.missing ? " missing" : ""}">
+        <span>${COMP_LABELS[k]}<span class="why">${c.reason || ""}</span>${extra}</span>
+        <span>${val}</span></div>`;
+    }).join("");
+    return `<div class="fee-track"><h4>${p.trackId} — ${KIND_LABELS[t.kind]}, ריבית ${t.rate}%</h4>
+      ${lines}
+      <div class="fee-total"><span>${p.hasMissingData ? "לא ניתן לחשב סה\"כ — יש רכיב חסר" : "סה\"כ למסלול"}</span>
+      <span>${p.hasMissingData ? "—" : money(p.total)}</span></div></div>`;
+  }).join("");
+
+  /* --- refinance subsets --- */
+  const banksWithTerm = CONFIG.rates.banks
+    .map(b => ({bank:b, rate:getBankRate(b, "fixedNonLinked", termYears)}))
+    .filter(x => x.rate !== null);
+  const bestBank = banksWithTerm.reduce((a,b) => b.rate < a.rate ? b : a, banksWithTerm[0]);
+
+  const replacementBuilder = (amount, avgMonths) => {
+    const yrs = Math.max(5, Math.min(30, Math.round(avgMonths/12/5)*5));
+    const rate = getBankRate(bestBank.bank, "fixedNonLinked", yrs);
+    return [{id:"מסלול חדש", kind:"fixedNonLinked", balance:amount, rate,
+             monthsLeft:avgMonths, originalMonths:avgMonths, schedule:"spitzer", linkedToCpi:false}];
+  };
+
+  const {comparable} = evaluateRefinanceSubsets(live, replacementBuilder, CONFIG, rulesCfg,
+                                                 scenarios, discountRate, noticeGiven);
+  const headline = refinanceHeadline(comparable);
+  const labelFor = r => r.isDoNothing ? "להשאיר הכל כמו שהוא"
+    : (r.isFullRefinance ? "מחזור מלא של כל המסלולים" : "מחזור חלקי: " + r.subsetIds.join(" + "));
+
+  if(headline.hasData && headline.worthwhile !== null){
+    const best = comparable[0];
+    el("verdict").innerHTML = headline.worthwhile
+      ? `<div class="verdict good"><p class="vtitle">כדאי למחזר — חיסכון של כ-${money(headline.savings)} בערך נוכחי</p>
+         <p>החלופה המשתלמת ביותר: <b>${labelFor(best)}</b>, מול ריבית של ${bestBank.rate}% ב${bestBank.bank.name} ל-${termYears} שנים. הסכום כבר כולל את עמלת הפירעון המוקדם.</p></div>`
+      : `<div class="verdict bad"><p class="vtitle">לא כדאי למחזר כרגע — המחזור יעלה כ-${money(Math.abs(headline.savings))} יותר</p>
+         <p>אף חלופת מחזור לא מכסה את עלותה מול הריביות שאתם משלמים היום. הכי משתלם להשאיר את המשכנתא כמו שהיא, ולבדוק שוב כשהריביות בשוק ירדו.</p></div>`;
+  }
+
+  el("subsetsTable").innerHTML = `
+    <thead><tr><th>חלופה</th><th>עמלת פירעון</th><th>עלות כוללת (ערך נוכחי)</th><th>מול אי-עשייה</th></tr></thead>
+    <tbody>${comparable.slice(0,8).map((r,i) => {
+      const dn = comparable.find(x => x.isDoNothing);
+      const diff = dn ? dn.totalCostPv - r.totalCostPv : 0;
+      const sev = diff > 0 ? "s-good" : (diff < 0 ? "s-bad" : "s-warn");
+      return `<tr${i===0?' class="is-best"':''}><td class="label">${labelFor(r)}</td>
+        <td>${money(r.fee.total)}</td><td>${money(r.totalCostPv)}</td>
+        <td><span class="sev ${sev}"></span>${r.isDoNothing ? "—" : (diff > 0 ? "חיסכון " : "עלות ") + money(Math.abs(diff))}</td></tr>`;
+    }).join("")}</tbody>`;
+
+  /* --- wait for reset --- */
+  const waiters = live.filter(t => isVariable(t) && t.monthsToNextReset > 0);
+  el("waitBlock").innerHTML = !waiters.length ? "" :
+    `<div class="sec-head" style="margin-top:22px"><h2 style="font-size:1.05rem">המתנה לתחנת יציאה</h2></div>` +
+    waiters.map(t => {
+      const w = waitForResetAlternative(t, CONFIG, bestBank.rate, discountRate, scenarios.base);
+      if(!w.comparable) return `<div class="rule warning">${t.id}: ${w.reason}</div>`;
+      const win = w.winner === "wait";
+      return `<div class="rule ${win ? "ok" : "warning"}">
+        <b>${t.id}</b> — ${w.monthsToReset} חודשים לתחנה הקרובה.
+        ${win ? `עדיף להמתין: בתחנה העמלה מתבטלת, וההמתנה חוסכת כ-${money(w.savings)} בערך נוכחי לעומת מחזור היום.`
+              : `עדיף למחזר עכשיו: ההמתנה תעלה כ-${money(w.savings)} יותר בערך נוכחי, גם אחרי החיסכון בעמלה.`}</div>`;
+    }).join("");
+
+  /* --- alternatives --- */
+  const alts = generateAlternatives(totalBalance, termYears, CONFIG, rulesCfg, scenarios, discountRate, {});
+  const ranked = rankAlternatives(alts);
+  const KIND_SHORT = {fixedNonLinked:"קל\"צ", prime:"פריים", varNonLinked:"משתנה"};
+  const barClass = {fixedNonLinked:"k1", prime:"k2", varNonLinked:"k3"};
+
+  if(!Object.keys(ranked).length){
+    el("alts").innerHTML = `<div class="rule blocking">לא נמצאה אף חלופה חוקית מול כללי הרגולציה שהוגדרו.</div>`;
+  } else {
+    const allFirst = Object.values(ranked).map(r => r.alt.metrics.perScenario.base.firstPayment);
+    const allPv = Object.values(ranked).map(r => r.alt.metrics.perScenario.base.pv);
+    const allWorst = Object.values(ranked).map(r => r.alt.metrics.perScenario.combined.maxPayment);
+    const minFirst = Math.min(...allFirst), minPv = Math.min(...allPv), minWorst = Math.min(...allWorst);
+
+    // כשאותו תמהיל מנצח בכמה קטגוריות, מציגים אותו פעם אחת עם כל התארים -
+    // ארבעה כרטיסים זהים הם רעש, לא ארבע חלופות.
+    const merged = [];
+    Object.values(ranked).forEach(entry => {
+      const sig = entry.alt.bankId + "|" + JSON.stringify(entry.alt.shares);
+      const found = merged.find(x => x.sig === sig);
+      if(found){ found.labels.push(entry.label); found.whys.push(entry.why); }
+      else merged.push({sig, labels:[entry.label], whys:[entry.why], alt:entry.alt});
+    });
+
+    el("alts").innerHTML = merged.map(entry => {
+      const a = entry.alt, m = a.metrics.perScenario;
+      const givesUp = [];
+      if(m.base.firstPayment - minFirst > 1)
+        givesUp.push(`החזר חודשי גבוה ב-${money(m.base.firstPayment - minFirst)} מהחלופה עם ההחזר הנמוך ביותר`);
+      if(m.base.pv - minPv > 1)
+        givesUp.push(`עלות כוללת גבוהה ב-${money(m.base.pv - minPv)} מהחלופה הזולה ביותר`);
+      if(m.combined.maxPayment - minWorst > 1)
+        givesUp.push(`בתרחיש לחץ ההחזר מגיע גבוה ב-${money(m.combined.maxPayment - minWorst)} מהחלופה העמידה ביותר`);
+
+      const mix = Object.entries(a.shares).filter(([,s]) => s > 0).map(([k,s]) =>
+        `<div class="mix-row"><span class="mix-bar ${barClass[k]}" style="width:${(s*68).toFixed(0)}px"></span>
+         <span class="mix-label">${KIND_SHORT[k]} ${(s*100).toFixed(0)}%</span></div>`).join("");
+
+      return `<div class="alt${entry.labels.includes("המאוזן") ? " is-pick" : ""}">
+        <h3>${entry.labels.join(" · ")}</h3>
+        <p class="bank">${a.bankName} · ${termYears} שנים</p>
+        <div class="mix">${mix}</div>
+        <div class="alt-nums">
+          <div class="n"><span>החזר חודשי ראשון</span><b>${money(m.base.firstPayment)}</b></div>
+          <div class="n"><span>עלות כוללת (ערך נוכחי)</span><b>${money(m.base.pv)}</b></div>
+          <div class="n"><span>החזר מקס' בתרחיש לחץ</span><b>${money(m.combined.maxPayment)}</b></div>
+        </div>
+        <div class="gives-up"><b>מוותרת על:</b> ${givesUp.length ? givesUp.join("; ") : "כלום מהותי — היא הטובה ביותר בכל המדדים שנבדקו"}. ${entry.whys[0]}</div>
+      </div>`;
+    }).join("");
+  }
+}
+
+/* ---------- config stamps ---------- */
+function renderStamps(){
+  const items = [["ריביות", CONFIG.rates.updatedAt], ["כללי רגולציה", CONFIG.rules.updatedAt],
+                 ["עמלות", CONFIG.fees.updatedAt]];
+  el("stamps").innerHTML = items.map(([label, date]) => {
+    const age = daysSince(date);
+    const stale = age > STALE_AFTER_DAYS;
+    return `<span class="stamp${stale ? " is-stale" : ""}">${label}: עודכן ${date}${stale ? ` · ישן (${age} ימים)` : ""}</span>`;
+  }).join("");
+  el("configFooter").textContent =
+    `כל התוצאות בדף מחושבות מטבלת הריביות מתאריך ${CONFIG.rates.updatedAt}, כללי הרגולציה מתאריך ${CONFIG.rules.updatedAt} (${CONFIG.rules.sourceRef}), וטבלת העמלות מתאריך ${CONFIG.fees.updatedAt}. שדה שחסר בנתונים מוצג כ"חסר נתון" ואינו מוערך בשקט.`;
+}
+
+/* ---------- wiring ---------- */
+let debounce;
+function scheduleRecompute(){ clearTimeout(debounce); debounce = setTimeout(recompute, 140); }
+
+["termYears","discountRate","baseInfl","highInfl","rateSteps","rampMonths"]
+  .forEach(id => el(id).addEventListener("input", scheduleRecompute));
+el("noticeGiven").addEventListener("change", recompute);
+
+el("addTrack").addEventListener("click", () => {
+  tracks.push({id:`מסלול ${tracks.length + 1}`, kind:"fixedNonLinked", balance:200000, rate:5.0,
+               monthsLeft:180, originalMonths:180, schedule:"spitzer", linkedToCpi:false,
+               resetEveryMonths:null, monthsToNextReset:null});
+  renderTracks(); recompute();
+});
+el("resetTracks").addEventListener("click", () => {
+  tracks = EXAMPLE_TRACKS(); renderTracks(); recompute();
+});
+
+renderStamps();
+renderTracks();
+recompute();
+</script>

@@ -44,6 +44,12 @@ class Track:
     post_grace_schedule: str = "spitzer"
 
     def is_variable(self) -> bool:
+        # פריים מתעדכן בפועל כל חודש עם ריבית בנק ישראל (ראה טבלת סוגי
+        # המסלולים בסעיף 2.2 באפיון: "תחנת יציאה - חודשית בפועל"), ולכן
+        # אין לו reset_every_months להגדיר והוא תמיד נחשב משתנה. בלי זה
+        # מסלול פריים היה נראה חסין לחלוטין לעליית ריבית בתרחישי הלחץ.
+        if self.kind == "prime":
+            return True
         return self.kind in VARIABLE_KINDS and self.reset_every_months is not None
 
 
@@ -79,10 +85,11 @@ def build_rate_path(track: Track, scenario: Scenario) -> list:
     if not track.is_variable():
         return [track.rate] * months
 
-    reset_every = track.reset_every_months
+    is_prime = track.kind == "prime"
+    reset_every = (track.reset_every_months or 1) if is_prime else track.reset_every_months
     next_reset = track.months_to_next_reset
     if next_reset is None:
-        next_reset = reset_every
+        next_reset = 0 if is_prime else reset_every
 
     path = []
     current_rate = track.rate
